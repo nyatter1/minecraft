@@ -1,11 +1,31 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft Infinite Baseplate - Textured Selection</title>
+    <title>Minecraft - Block Selection Outline</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
         
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 10;
+        }
+        #crosshair::before, #crosshair::after {
+            content: "";
+            position: absolute;
+            background: white;
+            mix-blend-mode: difference;
+        }
+        #crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
+        #crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
+
         /* Connected Hotbar Container */
         #hotbar {
             position: absolute;
@@ -16,7 +36,6 @@
             line-height: 0; 
         }
 
-        /* Individual Slots */
         .slot {
             width: 50px;
             height: 50px;
@@ -26,16 +45,10 @@
             position: relative;
         }
 
-        /* Selected Slot Outline using outline.jpg */
         .slot.active::after {
             content: "";
             position: absolute;
-            /* Negative margin makes the outline sit slightly outside the slot, 
-               common in Minecraft's UI style */
-            top: -2px;
-            left: -2px;
-            right: -2px;
-            bottom: -2px;
+            top: -2px; left: -2px; right: -2px; bottom: -2px;
             background-image: url('outline.png');
             background-size: 100% 100%;
             image-rendering: pixelated;
@@ -45,6 +58,7 @@
     </style>
 </head>
 <body>
+    <div id="crosshair"></div>
     <div id="hotbar">
         <div class="slot active" id="slot1"></div>
         <div class="slot" id="slot2"></div>
@@ -81,6 +95,7 @@
         return t;
     };
 
+    // Textures
     const grassTop = load('grass-top.jpg');
     const grassSide = load('grass-side.jpg');
     const woodSide = load('wood.jpg');
@@ -107,11 +122,26 @@
 
     const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, transparent: true, alphaTest: 0.5 });
 
+    // Interaction Setup
+    const raycaster = new THREE.Raycaster();
+    const blocks = []; // Array to keep track of all blocks for raycasting
+
+    // Selection Outline (Black box around blocks)
+    const outlineGeo = new THREE.BoxGeometry(1.005, 1.005, 1.005);
+    const outlineEdges = new THREE.EdgesGeometry(outlineGeo);
+    const outlineMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+    const selectionOutline = new THREE.LineSegments(outlineEdges, outlineMat);
+    selectionOutline.visible = false;
+    scene.add(selectionOutline);
+
+    // Baseplate (Infinite looking floor)
     grassTop.wrapS = grassTop.wrapT = THREE.RepeatWrapping;
     grassTop.repeat.set(1000, 1000);
     const baseplate = new THREE.Mesh(new THREE.BoxGeometry(1000, 2, 1000), grassMats);
     baseplate.position.y = -1;
     scene.add(baseplate);
+    // We don't add the floor to 'blocks' usually, 
+    // but you can if you want an outline on the floor too.
 
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
     function createTree(x, z) {
@@ -120,6 +150,7 @@
             const log = new THREE.Mesh(blockGeo, woodMats);
             log.position.set(x, y + 0.5, z);
             scene.add(log);
+            blocks.push(log);
         }
         for (let ly = -2; ly <= 2; ly++) {
             let radius = (ly > 0) ? 1 : 2;
@@ -130,6 +161,7 @@
                     const leaf = new THREE.Mesh(blockGeo, leafMat);
                     leaf.position.set(x + lx, trunkHeight + ly + 0.5, z + lz);
                     scene.add(leaf);
+                    blocks.push(leaf);
                 }
             }
         }
@@ -194,6 +226,7 @@
         const delta = Math.min((time - prevTime) / 1000, 0.1);
 
         if (controls.isLocked) {
+            // Movement Physics
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
             velocity.y -= 24.0 * delta; 
@@ -208,7 +241,20 @@
             if (camera.position.y < 1.62) {
                 velocity.y = 0; camera.position.y = 1.62; canJump = true;
             }
+
+            // --- Raycasting for block outline ---
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(blocks);
+
+            if (intersects.length > 0 && intersects[0].distance < 5) {
+                const target = intersects[0].object;
+                selectionOutline.position.copy(target.position);
+                selectionOutline.visible = true;
+            } else {
+                selectionOutline.visible = false;
+            }
         }
+
         renderer.render(scene, camera);
         prevTime = time;
     }
