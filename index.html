@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft - Infinite Depth</title>
+    <title>Minecraft - Infinite World & Depth</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; width: 100vw; height: 100vh; }
         canvas { display: block; width: 100%; height: 100%; }
@@ -77,7 +77,7 @@
     const CHUNK_SIZE = 8;
     const RENDER_DISTANCE = 3;
     const MAX_DEPTH = -200;
-    let currentDeepestLayer = -10; // Start depth
+    let currentDeepestLayer = -10;
     let selectedSlot = 0;
 
     const scene = new THREE.Scene();
@@ -158,7 +158,20 @@
         return mesh;
     }
 
-    // Dynamic layer generation
+    function createTree(x, z, group) {
+        const height = 4 + Math.floor(Math.random() * 2);
+        for (let y = 1; y <= height; y++) createBlock('wood', x, y, z, group);
+        for (let ly = -2; ly <= 2; ly++) {
+            let radius = ly > 0 ? (ly === 2 ? 0 : 1) : 2;
+            for (let lx = -radius; lx <= radius; lx++) {
+                for (let lz = -radius; lz <= radius; lz++) {
+                    if (lx === 0 && lz === 0 && ly < 1) continue;
+                    createBlock('leaf', x + lx, height + ly, z + lz, group);
+                }
+            }
+        }
+    }
+
     function generateLayers(cx, cz, group, startY, endY) {
         for (let x = 0; x < CHUNK_SIZE; x++) {
             for (let z = 0; z < CHUNK_SIZE; z++) {
@@ -166,14 +179,16 @@
                 const pz = cz * CHUNK_SIZE + z;
                 for (let y = startY; y >= endY; y--) {
                     if (y < MAX_DEPTH) continue;
-                    
                     let type = 'stone';
-                    if (y === 0) type = 'grass';
+                    if (y === 0) {
+                        type = 'grass';
+                        // Tree chance only at surface
+                        const treeChance = Math.sin(px * 12.9898 + pz * 78.233) * 43758.5453;
+                        if ((treeChance - Math.floor(treeChance)) > 0.985) createTree(px, pz, group);
+                    }
                     else if (y > -4) type = 'dirt';
                     else if (y <= -50) type = 'deepslate';
-                    
                     if (y === MAX_DEPTH) type = 'bedrock';
-                    
                     createBlock(type, px, y, pz, group);
                 }
             }
@@ -191,7 +206,6 @@
         const curCX = Math.floor(camera.position.x / CHUNK_SIZE);
         const curCZ = Math.floor(camera.position.z / CHUNK_SIZE);
         
-        // Check if player is near current bottom
         if (camera.position.y < currentDeepestLayer + 10 && currentDeepestLayer > MAX_DEPTH) {
             const nextDepth = Math.max(MAX_DEPTH, currentDeepestLayer - 4);
             chunks.forEach((group, key) => {
@@ -274,6 +288,8 @@
         const delta = Math.min((time - prevTime) / 1000, 0.1);
 
         if (controls.isLocked) {
+            const oldPos = camera.position.clone();
+
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
             velocity.y -= 25.0 * delta; 
@@ -285,8 +301,31 @@
 
             controls.moveRight(velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
+            
+            // --- HORIZONTAL COLLISION CHECK (The 2-block gap fix) ---
+            // Check if moving caused us to enter a block at chest/head height
+            const checkRays = [
+                new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
+                new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
+            ];
+            let collided = false;
+            for (let rayDir of checkRays) {
+                // Ray from feet and ray from head
+                const rayFeet = new THREE.Raycaster(camera.position.clone().add(new THREE.Vector3(0,-1.5,0)), rayDir, 0, 0.4);
+                const rayHead = new THREE.Raycaster(camera.position, rayDir, 0, 0.4);
+                if (rayFeet.intersectObjects(blocks).length > 0 || rayHead.intersectObjects(blocks).length > 0) {
+                    collided = true;
+                    break;
+                }
+            }
+            if (collided) {
+                camera.position.x = oldPos.x;
+                camera.position.z = oldPos.z;
+            }
+
             camera.position.y += velocity.y * delta;
 
+            // --- VERTICAL COLLISION ---
             const playerRay = new THREE.Raycaster(camera.position, new THREE.Vector3(0, -1, 0), 0, 1.7);
             const intersections = playerRay.intersectObjects(blocks);
             
