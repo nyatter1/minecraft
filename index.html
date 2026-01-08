@@ -18,30 +18,33 @@
 
         #hotbar {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 4px; padding: 4px; background: rgba(0,0,0,0.3);
+            display: flex; gap: 4px; padding: 4px; background: rgba(0,0,0,0.5);
             border: 2px solid #333; z-index: 20;
         }
 
         .slot {
-            width: 50px; height: 50px; background: rgba(255, 255, 255, 0.2);
+            width: 50px; height: 50px; background: rgba(0, 0, 0, 0.3);
             border: 2px solid #555; position: relative; box-sizing: border-box;
+            background-size: cover; image-rendering: pixelated;
         }
 
-        .slot.active {
-            border: 4px solid white;
-            background: rgba(255, 255, 255, 0.4);
+        .slot.active { border: 4px solid white; background-color: rgba(255, 255, 255, 0.2); }
+
+        .count {
+            position: absolute; bottom: 2px; right: 2px; color: white;
+            font-size: 12px; text-shadow: 1px 1px 2px black; font-weight: bold;
         }
     </style>
 </head>
 <body>
     <div id="crosshair"></div>
     <div id="hotbar">
-        <div class="slot active" id="slot1"></div>
-        <div class="slot" id="slot2"></div>
-        <div class="slot" id="slot3"></div>
-        <div class="slot" id="slot4"></div>
-        <div class="slot" id="slot5"></div>
-        <div class="slot" id="slot6"></div>
+        <div class="slot active" id="slot1"><span class="count"></span></div>
+        <div class="slot" id="slot2"><span class="count"></span></div>
+        <div class="slot" id="slot3"><span class="count"></span></div>
+        <div class="slot" id="slot4"><span class="count"></span></div>
+        <div class="slot" id="slot5"><span class="count"></span></div>
+        <div class="slot" id="slot6"><span class="count"></span></div>
     </div>
 
     <canvas id="canvas"></canvas>
@@ -50,7 +53,6 @@
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
     import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
-    // --- CONFIG ---
     const CHUNK_SIZE = 16;
     const RENDER_DISTANCE = 2; 
 
@@ -61,7 +63,6 @@
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: false });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
     const sun = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -76,22 +77,63 @@
         return t;
     };
 
-    // Textures
     const grassTop = load('grass-top.jpg'), grassSide = load('grass-side.jpg'), dirtTex = load('bottom.jpg');
     const woodSide = load('wood.jpg'), woodTop = load('woodtop.jpg'), leafTex = load('leaf.jpg');
 
     const grassMats = [
-        new THREE.MeshStandardMaterial({ map: grassSide }), new THREE.MeshStandardMaterial({ map: grassSide }),
+        new THREE.MeshStandardMaterial({ map: grassSide, name: 'grass' }), new THREE.MeshStandardMaterial({ map: grassSide }),
         new THREE.MeshStandardMaterial({ map: grassTop }), new THREE.MeshStandardMaterial({ map: dirtTex }),
         new THREE.MeshStandardMaterial({ map: grassSide }), new THREE.MeshStandardMaterial({ map: grassSide })
     ];
-    const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex });
+    const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex, name: 'dirt' });
     const woodMats = [
-        new THREE.MeshStandardMaterial({ map: woodSide }), new THREE.MeshStandardMaterial({ map: woodSide }),
+        new THREE.MeshStandardMaterial({ map: woodSide, name: 'wood' }), new THREE.MeshStandardMaterial({ map: woodSide }),
         new THREE.MeshStandardMaterial({ map: woodTop }), new THREE.MeshStandardMaterial({ map: woodTop }),
         new THREE.MeshStandardMaterial({ map: woodSide }), new THREE.MeshStandardMaterial({ map: woodSide })
     ];
-    const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, transparent: true, alphaTest: 0.5 });
+    const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, transparent: true, alphaTest: 0.5, name: 'leaf' });
+
+    // --- INVENTORY SYSTEM ---
+    const inventory = [null, null, null, null, null, null];
+    const iconMap = {
+        'grass': 'grass-side.jpg',
+        'dirt': 'bottom.jpg',
+        'wood': 'wood.jpg',
+        'leaf': 'leaf.jpg'
+    };
+
+    function addToInventory(type) {
+        // Try to find existing stack
+        let slotIndex = inventory.findIndex(item => item && item.type === type);
+        
+        if (slotIndex === -1) {
+            // Find first empty slot
+            slotIndex = inventory.findIndex(item => item === null);
+        }
+
+        if (slotIndex !== -1) {
+            if (inventory[slotIndex]) {
+                inventory[slotIndex].count++;
+            } else {
+                inventory[slotIndex] = { type: type, count: 1 };
+            }
+            updateUI();
+        }
+    }
+
+    function updateUI() {
+        inventory.forEach((item, i) => {
+            const slot = document.getElementById(`slot${i+1}`);
+            const countEl = slot.querySelector('.count');
+            if (item) {
+                slot.style.backgroundImage = `url(${iconMap[item.type]})`;
+                countEl.innerText = item.count;
+            } else {
+                slot.style.backgroundImage = 'none';
+                countEl.innerText = '';
+            }
+        });
+    }
 
     let blocks = []; 
     const chunks = new Map();
@@ -101,7 +143,6 @@
         new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02)), 
         new THREE.LineBasicMaterial({ color: 0x000000 })
     );
-    selectionOutline.visible = false;
     scene.add(selectionOutline);
 
     function seededRandom(x, z) {
@@ -114,6 +155,7 @@
         for (let y = 1; y <= trunkHeight; y++) {
             const log = new THREE.Mesh(blockGeo, woodMats);
             log.position.set(x, y, z);
+            log.userData.type = 'wood';
             group.add(log);
             blocks.push(log);
         }
@@ -125,6 +167,7 @@
                     if (lx === 0 && lz === 0 && ly < 0) continue;
                     const leaf = new THREE.Mesh(blockGeo, leafMat);
                     leaf.position.set(x + lx, trunkHeight + ly, z + lz);
+                    leaf.userData.type = 'leaf';
                     group.add(leaf);
                     blocks.push(leaf);
                 }
@@ -138,14 +181,19 @@
             for (let z = 0; z < CHUNK_SIZE; z++) {
                 const px = cx * CHUNK_SIZE + x;
                 const pz = cz * CHUNK_SIZE + z;
+                
                 const grass = new THREE.Mesh(blockGeo, grassMats);
                 grass.position.set(px, 0, pz);
+                grass.userData.type = 'grass';
                 group.add(grass);
                 blocks.push(grass);
+
                 const dirt = new THREE.Mesh(blockGeo, dirtMat);
                 dirt.position.set(px, -1, pz);
+                dirt.userData.type = 'dirt';
                 group.add(dirt);
                 blocks.push(dirt);
+
                 if (seededRandom(px, pz) > 0.985) createTree(px, pz, group);
             }
         }
@@ -178,29 +226,22 @@
     const controls = new PointerLockControls(camera, document.body);
     const raycaster = new THREE.Raycaster();
 
-    // --- BLOCK BREAKING LOGIC ---
     document.addEventListener('mousedown', (e) => {
         if (!controls.isLocked) {
             controls.lock();
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(err => console.log(err));
-            }
-        } else {
-            // Left click to break (button 0)
-            if (e.button === 0) {
-                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-                const intersects = raycaster.intersectObjects(blocks, false);
+            document.documentElement.requestFullscreen().catch(() => {});
+        } else if (e.button === 0) {
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(blocks, false);
+            if (intersects.length > 0 && intersects[0].distance < 6) {
+                const block = intersects[0].object;
                 
-                if (intersects.length > 0 && intersects[0].distance < 6) {
-                    const block = intersects[0].object;
-                    
-                    // Remove from scene
-                    if (block.parent) block.parent.remove(block);
-                    
-                    // Remove from raycasting list
-                    const index = blocks.indexOf(block);
-                    if (index > -1) blocks.splice(index, 1);
-                }
+                // Add to inventory based on saved userData type
+                if (block.userData.type) addToInventory(block.userData.type);
+                
+                if (block.parent) block.parent.remove(block);
+                const index = blocks.indexOf(block);
+                if (index > -1) blocks.splice(index, 1);
             }
         }
     });
@@ -208,7 +249,6 @@
     let velocity = new THREE.Vector3();
     let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
     let canJump = false;
-
     camera.position.set(8, 3, 8);
 
     const onKeyDown = (e) => {
@@ -236,7 +276,6 @@
     document.addEventListener('keyup', onKeyUp);
 
     let prevTime = performance.now();
-
     function animate() {
         requestAnimationFrame(animate);
         const time = performance.now();
@@ -246,7 +285,6 @@
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
             velocity.y -= 24.0 * delta; 
-
             const speed = 75.0;
             if (moveForward) velocity.z -= speed * delta;
             if (moveBackward) velocity.z += speed * delta;
@@ -263,7 +301,6 @@
 
             if (Math.round(time) % 20 === 0) updateChunks();
 
-            // Outline logic
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             const intersects = raycaster.intersectObjects(blocks, false);
             if (intersects.length > 0 && intersects[0].distance < 6) {
@@ -273,7 +310,6 @@
                 selectionOutline.visible = false;
             }
         }
-
         renderer.render(scene, camera);
         prevTime = time;
     }
