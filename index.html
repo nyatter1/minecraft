@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Infinite Baseplate FPS</title>
+    <title>Infinite Baseplate - Wood Blocks</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; }
         canvas { display: block; width: 100vw; height: 100vh; }
@@ -14,6 +14,7 @@
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
     import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
+    // --- Scene Setup ---
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
     scene.fog = new THREE.Fog(0x87CEEB, 20, 500); 
@@ -30,34 +31,56 @@
     // --- Texture Loading ---
     const loader = new THREE.TextureLoader();
     
-    // Attempting to load your specific files. 
-    // If they are .png, change the extension here!
-    const topTex = loader.load('grass-top.jpg');
-    const sideTex = loader.load('grass-side.jpg');
+    // Grass Textures
+    const grassTop = loader.load('grass-top.jpg');
+    const grassSide = loader.load('grass-side.jpg');
+    // Wood Textures
+    const woodSide = loader.load('wood.jpg');
+    const woodTop = loader.load('woodtop.jpg');
 
-    [topTex, sideTex].forEach(tex => {
-        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        // This makes the pixels look sharp/blocky like Minecraft
+    [grassTop, grassSide, woodSide, woodTop].forEach(tex => {
         tex.magFilter = THREE.NearestFilter;
         tex.minFilter = THREE.NearestFilter;
     });
 
-    topTex.repeat.set(5000, 5000);
-    sideTex.repeat.set(5000, 1);
-
-    const materials = [
-        new THREE.MeshStandardMaterial({ map: sideTex }), // Right
-        new THREE.MeshStandardMaterial({ map: sideTex }), // Left
-        new THREE.MeshStandardMaterial({ map: topTex }),  // Top
-        new THREE.MeshStandardMaterial({ map: sideTex }), // Bottom
-        new THREE.MeshStandardMaterial({ map: sideTex }), // Front
-        new THREE.MeshStandardMaterial({ map: sideTex })  // Back
+    // --- Baseplate ---
+    grassTop.wrapS = grassTop.wrapT = THREE.RepeatWrapping;
+    grassTop.repeat.set(5000, 5000);
+    
+    const grassMaterials = [
+        new THREE.MeshStandardMaterial({ map: grassSide }),
+        new THREE.MeshStandardMaterial({ map: grassSide }),
+        new THREE.MeshStandardMaterial({ map: grassTop }),
+        new THREE.MeshStandardMaterial({ map: grassSide }),
+        new THREE.MeshStandardMaterial({ map: grassSide }),
+        new THREE.MeshStandardMaterial({ map: grassSide })
     ];
-
-    const floorGeo = new THREE.BoxGeometry(10000, 2, 10000);
-    const baseplate = new THREE.Mesh(floorGeo, materials);
+    const baseplate = new THREE.Mesh(new THREE.BoxGeometry(10000, 2, 10000), grassMaterials);
     baseplate.position.y = -1; 
     scene.add(baseplate);
+
+    // --- Wooden Blocks ---
+    const woodMaterials = [
+        new THREE.MeshStandardMaterial({ map: woodSide }), // Right
+        new THREE.MeshStandardMaterial({ map: woodSide }), // Left
+        new THREE.MeshStandardMaterial({ map: woodTop }),  // Top
+        new THREE.MeshStandardMaterial({ map: woodTop }),  // Bottom
+        new THREE.MeshStandardMaterial({ map: woodSide }), // Front
+        new THREE.MeshStandardMaterial({ map: woodSide })  // Back
+    ];
+
+    const blockGeo = new THREE.BoxGeometry(2, 2, 2);
+    const blocks = [];
+
+    // Create 50 random wooden blocks
+    for(let i = 0; i < 50; i++) {
+        const block = new THREE.Mesh(blockGeo, woodMaterials);
+        block.position.x = (Math.random() - 0.5) * 200;
+        block.position.z = (Math.random() - 0.5) * 200;
+        block.position.y = 1; // Sit on top of the grass (since grass top is at y=0)
+        scene.add(block);
+        blocks.push(block);
+    }
 
     // --- Movement Logic ---
     const controls = new PointerLockControls(camera, document.body);
@@ -110,6 +133,7 @@
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
 
+            // Collision with Ground
             if (camera.position.y < 1.8) {
                 velocity.y = 0;
                 camera.position.y = 1.8;
