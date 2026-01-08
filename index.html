@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft - Infinite Procedural Generation</title>
+    <title>Minecraft - Infinite World</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
@@ -20,10 +20,12 @@
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
             display: flex; line-height: 0; 
         }
+
         .slot {
             width: 50px; height: 50px; background-image: url('slot.jpg');
             background-size: 100% 100%; image-rendering: pixelated; position: relative;
         }
+
         .slot.active::after {
             content: ""; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
             background-image: url('outline.png'); background-size: 100% 100%;
@@ -41,25 +43,24 @@
         <div class="slot" id="slot5"></div>
         <div class="slot" id="slot6"></div>
     </div>
+
     <canvas id="canvas"></canvas>
 
 <script type="module">
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
     import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
-    // --- CONFIGURATION ---
+    // --- CONFIG ---
     const CHUNK_SIZE = 16;
-    const RENDER_DISTANCE = 3; // Chunks in each direction
-    const dummy = new THREE.Object3D();
+    const RENDER_DISTANCE = 3; // How many chunks to show around you
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 20, CHUNK_SIZE * RENDER_DISTANCE * 1.5);
+    scene.fog = new THREE.Fog(0x87CEEB, 20, (RENDER_DISTANCE * CHUNK_SIZE) + 10);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: false });
+    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
     const sun = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -74,13 +75,9 @@
         return t;
     };
 
-    // --- MATERIALS ---
-    const grassTop = load('grass-top.jpg');
-    const grassSide = load('grass-side.jpg');
-    const dirtTex = load('bottom.jpg');
-    const woodSide = load('wood.jpg');
-    const woodTop = load('woodtop.jpg');
-    const leafTex = load('leaf.jpg');
+    // Textures
+    const grassTop = load('grass-top.jpg'), grassSide = load('grass-side.jpg'), dirtTex = load('bottom.jpg');
+    const woodSide = load('wood.jpg'), woodTop = load('woodtop.jpg'), leafTex = load('leaf.jpg');
 
     const grassMats = [
         new THREE.MeshStandardMaterial({ map: grassSide }), new THREE.MeshStandardMaterial({ map: grassSide }),
@@ -95,86 +92,102 @@
     ];
     const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, transparent: true, alphaTest: 0.5 });
 
-    const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+    // Interaction & World Storage
+    const raycaster = new THREE.Raycaster();
+    const blocks = []; 
     const chunks = new Map();
+    const blockGeo = new THREE.BoxGeometry(1, 1, 1);
 
-    // --- GENERATION LOGIC ---
-    function getChunkKey(x, z) { return `${x},${z}`; }
+    // Selection Outline
+    const outlineGeo = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+    const selectionOutline = new THREE.LineSegments(new THREE.EdgesGeometry(outlineGeo), new THREE.LineBasicMaterial({ color: 0x000000 }));
+    selectionOutline.visible = false;
+    scene.add(selectionOutline);
 
-    function createChunk(cx, cz) {
-        const group = new THREE.Group();
-        const grassMesh = new THREE.InstancedMesh(blockGeo, grassMats, CHUNK_SIZE * CHUNK_SIZE);
-        const dirtMesh = new THREE.InstancedMesh(blockGeo, dirtMat, CHUNK_SIZE * CHUNK_SIZE);
-        
-        let idx = 0;
-        for (let x = 0; x < CHUNK_SIZE; x++) {
-            for (let z = 0; z < CHUNK_SIZE; z++) {
-                const posX = cx * CHUNK_SIZE + x;
-                const posZ = cz * CHUNK_SIZE + z;
-
-                // Grass
-                dummy.position.set(posX, 0, posZ);
-                dummy.updateMatrix();
-                grassMesh.setMatrixAt(idx, dummy.matrix);
-
-                // Dirt
-                dummy.position.set(posX, -1, posZ);
-                dummy.updateMatrix();
-                dirtMesh.setMatrixAt(idx, dummy.matrix);
-                idx++;
-
-                // Pseudo-random trees
-                if (seededRandom(posX, posZ) > 0.98) {
-                    spawnTree(posX, posZ, group);
-                }
-            }
-        }
-        group.add(grassMesh, dirtMesh);
-        scene.add(group);
-        return group;
-    }
-
-    function spawnTree(x, z, group) {
-        const height = 4 + Math.floor(Math.random() * 2);
-        for (let y = 1; y <= height; y++) {
-            const log = new THREE.Mesh(blockGeo, woodMats);
-            log.position.set(x, y, z);
-            group.add(log);
-        }
-        // Simplified leaves for performance
-        const leaf = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), leafMat);
-        leaf.position.set(x, height + 1, z);
-        group.add(leaf);
-    }
-
+    // --- PROCEDURAL GENERATION ---
     function seededRandom(x, z) {
         const val = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453123;
         return val - Math.floor(val);
     }
 
-    function updateChunks() {
-        const pCX = Math.floor(camera.position.x / CHUNK_SIZE);
-        const pCZ = Math.floor(camera.position.z / CHUNK_SIZE);
+    function createTree(x, z, group) {
+        const trunkHeight = 4 + Math.floor(seededRandom(x, z) * 2);
+        for (let y = 1; y <= trunkHeight; y++) {
+            const log = new THREE.Mesh(blockGeo, woodMats);
+            log.position.set(x, y, z);
+            group.add(log);
+            blocks.push(log);
+        }
+        for (let ly = -2; ly <= 2; ly++) {
+            let radius = (ly > 0) ? 1 : 2;
+            for (let lx = -radius; lx <= radius; lx++) {
+                for (let lz = -radius; lz <= radius; lz++) {
+                    if (ly === 2 && (Math.abs(lx) + Math.abs(lz) > 1)) continue;
+                    if (lx === 0 && lz === 0 && ly < 0) continue;
+                    const leaf = new THREE.Mesh(blockGeo, leafMat);
+                    leaf.position.set(x + lx, trunkHeight + ly, z + lz);
+                    group.add(leaf);
+                    blocks.push(leaf);
+                }
+            }
+        }
+    }
 
-        for (let x = pCX - RENDER_DISTANCE; x <= pCX + RENDER_DISTANCE; x++) {
-            for (let z = pCZ - RENDER_DISTANCE; z <= pCZ + RENDER_DISTANCE; z++) {
-                const key = getChunkKey(x, z);
+    function createChunk(cx, cz) {
+        const group = new THREE.Group();
+        for (let x = 0; x < CHUNK_SIZE; x++) {
+            for (let z = 0; z < CHUNK_SIZE; z++) {
+                const px = cx * CHUNK_SIZE + x;
+                const pz = cz * CHUNK_SIZE + z;
+
+                const grass = new THREE.Mesh(blockGeo, grassMats);
+                grass.position.set(px, 0, pz);
+                group.add(grass);
+                blocks.push(grass);
+
+                const dirt = new THREE.Mesh(blockGeo, dirtMat);
+                dirt.position.set(px, -1, pz);
+                group.add(dirt);
+                blocks.push(dirt);
+
+                if (seededRandom(px, pz) > 0.985) {
+                    createTree(px, pz, group);
+                }
+            }
+        }
+        scene.add(group);
+        return group;
+    }
+
+    function updateChunks() {
+        const curCX = Math.floor(camera.position.x / CHUNK_SIZE);
+        const curCZ = Math.floor(camera.position.z / CHUNK_SIZE);
+
+        for (let x = curCX - RENDER_DISTANCE; x <= curCX + RENDER_DISTANCE; x++) {
+            for (let z = curCZ - RENDER_DISTANCE; z <= curCZ + RENDER_DISTANCE; z++) {
+                const key = `${x},${z}`;
                 if (!chunks.has(key)) {
                     chunks.set(key, createChunk(x, z));
                 }
             }
         }
-        // Cleanup distant chunks
-        for (const [key, value] of chunks) {
+
+        // Cleanup far chunks to prevent lag
+        for (const [key, group] of chunks) {
             const [cx, cz] = key.split(',').map(Number);
-            if (Math.abs(cx - pCX) > RENDER_DISTANCE + 1 || Math.abs(cz - pCZ) > RENDER_DISTANCE + 1) {
-                scene.remove(value);
+            if (Math.abs(cx - curCX) > RENDER_DISTANCE + 1 || Math.abs(cz - curCZ) > RENDER_DISTANCE + 1) {
+                scene.remove(group);
+                // Remove blocks from raycast list
+                group.children.forEach(child => {
+                    const idx = blocks.indexOf(child);
+                    if (idx > -1) blocks.splice(idx, 1);
+                });
                 chunks.delete(key);
             }
         }
     }
 
-    // --- CONTROLS & PHYSICS ---
+    // --- CONTROLS ---
     const controls = new PointerLockControls(camera, document.body);
     document.addEventListener('click', () => controls.lock());
 
@@ -218,7 +231,8 @@
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
             velocity.y -= 24.0 * delta; 
-            const speed = 80.0;
+
+            const speed = 75.0;
             if (moveForward) velocity.z -= speed * delta;
             if (moveBackward) velocity.z += speed * delta;
             if (moveLeft) velocity.x -= speed * delta;
@@ -227,11 +241,22 @@
             controls.moveRight(velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
-            
+
             if (camera.position.y < 2.1) {
                 velocity.y = 0; camera.position.y = 2.1; canJump = true;
             }
+
             updateChunks();
+
+            // Raycasting for outline
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(blocks);
+            if (intersects.length > 0 && intersects[0].distance < 6) {
+                selectionOutline.position.copy(intersects[0].object.position);
+                selectionOutline.visible = true;
+            } else {
+                selectionOutline.visible = false;
+            }
         }
 
         renderer.render(scene, camera);
