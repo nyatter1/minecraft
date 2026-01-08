@@ -1,11 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft - 60FPS Infinite World</title>
+    <title>Minecraft - Lag-Free Infinite World</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
-        
         #crosshair {
             position: absolute; top: 50%; left: 50%; width: 20px; height: 20px;
             transform: translate(-50%, -50%); pointer-events: none; z-index: 10;
@@ -15,7 +14,6 @@
         }
         #crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
         #crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
-
         #hotbar {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
             display: flex; line-height: 0; 
@@ -47,28 +45,30 @@
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
     import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
-    // --- OPTIMIZED CONFIG ---
     const CHUNK_SIZE = 16;
     const RENDER_DISTANCE = 3; 
-    const dummy = new THREE.Object3D(); // Reuse for positioning instances
+    const dummy = new THREE.Object3D();
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 20, (RENDER_DISTANCE * CHUNK_SIZE) + 10);
+    scene.fog = new THREE.Fog(0x87CEEB, 20, (RENDER_DISTANCE * CHUNK_SIZE) + 5);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: false });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(1); // Performance boost for high-DPI screens
+    renderer.setPixelRatio(1); // Performance boost
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(20, 50, 10);
+    scene.add(sun);
 
     const loader = new THREE.TextureLoader();
-    const load = (f) => { 
-        const t = loader.load(f); 
-        t.magFilter = THREE.NearestFilter; 
-        t.minFilter = THREE.NearestFilter; 
-        return t; 
+    const load = (f) => {
+        const t = loader.load(f);
+        t.magFilter = THREE.NearestFilter;
+        t.minFilter = THREE.NearestFilter;
+        return t;
     };
 
     const grassTop = load('grass-top.jpg'), grassSide = load('grass-side.jpg'), dirtTex = load('bottom.jpg');
@@ -90,6 +90,7 @@
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
     const chunks = new Map();
     const raycaster = new THREE.Raycaster();
+    const interactables = []; // Only for the outline
 
     const selectionOutline = new THREE.LineSegments(
         new THREE.EdgesGeometry(new THREE.BoxGeometry(1.01, 1.01, 1.01)),
@@ -103,15 +104,14 @@
     }
 
     function createChunk(cx, cz) {
-        const chunk = new THREE.Group();
-        // Max blocks per chunk (terrain + potential trees)
-        const terrainCount = CHUNK_SIZE * CHUNK_SIZE;
-        const grassIM = new THREE.InstancedMesh(blockGeo, grassMats, terrainCount);
-        const dirtIM = new THREE.InstancedMesh(blockGeo, dirtMat, terrainCount);
+        const group = new THREE.Group();
+        const count = CHUNK_SIZE * CHUNK_SIZE;
         
-        // We use simple Meshes for trees for better raycasting/interaction 
-        // but keep the count low to maintain 60FPS.
-        let idx = 0;
+        // INSTANCING: Draw 256 blocks with ONE command
+        const grassIM = new THREE.InstancedMesh(blockGeo, grassMats, count);
+        const dirtIM = new THREE.InstancedMesh(blockGeo, dirtMat, count);
+        
+        let i = 0;
         for (let x = 0; x < CHUNK_SIZE; x++) {
             for (let z = 0; z < CHUNK_SIZE; z++) {
                 const px = cx * CHUNK_SIZE + x;
@@ -119,31 +119,37 @@
 
                 dummy.position.set(px, 0, pz);
                 dummy.updateMatrix();
-                grassIM.setMatrixAt(idx, dummy.matrix);
+                grassIM.setMatrixAt(i, dummy.matrix);
 
                 dummy.position.set(px, -1, pz);
                 dummy.updateMatrix();
-                dirtIM.setMatrixAt(idx, dummy.matrix);
-                idx++;
+                dirtIM.setMatrixAt(i, dummy.matrix);
 
-                if (seededRandom(px, pz) > 0.99) spawnTree(px, pz, chunk);
+                if (seededRandom(px, pz) > 0.985) {
+                    spawnTree(px, pz, group);
+                }
+                i++;
             }
         }
-        chunk.add(grassIM, dirtIM);
-        scene.add(chunk);
-        return chunk;
+        group.add(grassIM, dirtIM);
+        scene.add(group);
+        return group;
     }
 
     function spawnTree(x, z, group) {
         const h = 4 + Math.floor(seededRandom(x, z) * 2);
+        // Logs
         for (let y = 1; y <= h; y++) {
             const log = new THREE.Mesh(blockGeo, woodMats);
             log.position.set(x, y, z);
             group.add(log);
+            interactables.push(log);
         }
-        const leaf = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), leafMat);
-        leaf.position.set(x, h + 1, z);
-        group.add(leaf);
+        // Simplified leaves for FPS
+        const leaves = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), leafMat);
+        leaves.position.set(x, h + 1, z);
+        group.add(leaves);
+        interactables.push(leaves);
     }
 
     function updateChunks() {
@@ -156,7 +162,7 @@
                 if (!chunks.has(key)) chunks.set(key, createChunk(x, z));
             }
         }
-        // Purge distant chunks
+
         for (const [key, group] of chunks) {
             const [cx, cz] = key.split(',').map(Number);
             if (Math.abs(cx - pCX) > RENDER_DISTANCE + 1 || Math.abs(cz - pCZ) > RENDER_DISTANCE + 1) {
@@ -174,17 +180,21 @@
     camera.position.set(8, 3, 8);
 
     document.addEventListener('keydown', (e) => {
-        if (e.code === 'KeyW') move.f = true; if (e.code === 'KeyS') move.b = true;
-        if (e.code === 'KeyA') move.l = true; if (e.code === 'KeyD') move.r = true;
-        if (e.code === 'Space' && canJump) { velocity.y = 9; canJump = false; }
-        if (e.key >= 1 && e.key <= 6) {
-            document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
-            document.getElementById('slot' + e.key).classList.add('active');
+        switch (e.code) {
+            case 'KeyW': move.f = true; break;
+            case 'KeyS': move.b = true; break;
+            case 'KeyA': move.l = true; break;
+            case 'KeyD': move.r = true; break;
+            case 'Space': if (canJump) { velocity.y = 9; canJump = false; } break;
         }
     });
     document.addEventListener('keyup', (e) => {
-        if (e.code === 'KeyW') move.f = false; if (e.code === 'KeyS') move.b = false;
-        if (e.code === 'KeyA') move.l = false; if (e.code === 'KeyD') move.r = false;
+        switch (e.code) {
+            case 'KeyW': move.f = false; break;
+            case 'KeyS': move.b = false; break;
+            case 'KeyA': move.l = false; break;
+            case 'KeyD': move.r = false; break;
+        }
     });
 
     let prevTime = performance.now();
@@ -194,11 +204,10 @@
         const delta = Math.min((time - prevTime) / 1000, 0.1);
 
         if (controls.isLocked) {
-            velocity.x -= velocity.x * 10 * delta;
-            velocity.z -= velocity.z * 10 * delta;
-            velocity.y -= 24 * delta; 
-
-            const speed = 70.0;
+            velocity.x -= velocity.x * 10.0 * delta;
+            velocity.z -= velocity.z * 10.0 * delta;
+            velocity.y -= 24.0 * delta; 
+            const speed = 75.0;
             if (move.f) velocity.z -= speed * delta;
             if (move.b) velocity.z += speed * delta;
             if (move.l) velocity.x -= speed * delta;
@@ -207,28 +216,23 @@
             controls.moveRight(velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
-
+            
             if (camera.position.y < 2.1) {
                 velocity.y = 0; camera.position.y = 2.1; canJump = true;
             }
 
-            // --- OPTIMIZED OUTLINE ---
-            // Only raycast every 2nd frame or against a smaller set of objects for speed
+            updateChunks();
+
+            // Outline logic (Optimized)
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-            const intersects = raycaster.intersectObjects(scene.children, true);
+            const intersects = raycaster.intersectObjects(interactables);
             if (intersects.length > 0 && intersects[0].distance < 6) {
-                const hit = intersects[0];
-                // If it's an InstancedMesh, we'd need more logic to find the exact sub-block
-                // For now, it snaps to the closest Mesh (trees) or center of terrain
-                selectionOutline.position.copy(hit.object.position);
-                selectionOutline.visible = (hit.object.type === 'Mesh'); 
+                selectionOutline.position.copy(intersects[0].object.position);
+                selectionOutline.visible = true;
             } else {
                 selectionOutline.visible = false;
             }
-
-            updateChunks();
         }
-
         renderer.render(scene, camera);
         prevTime = time;
     }
