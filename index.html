@@ -1,180 +1,132 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Infinite Baseplate FPS</title>
-
-<style>
-    body {
-        margin: 0;
-        overflow: hidden;
-        background: #87CEEB;
-    }
-    canvas {
-        display: block;
-        width: 100vw;
-        height: 100vh;
-    }
-</style>
+    <title>Infinite Baseplate FPS</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #87CEEB; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+    </style>
 </head>
-
 <body>
 <canvas id="canvas"></canvas>
 
 <script type="module">
-import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
-import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
+    import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+    import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
-/* ------------------ SCENE ------------------ */
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB);
-scene.fog = new THREE.Fog(0x87CEEB, 50, 1200);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 20, 500); 
 
-/* ------------------ CAMERA ------------------ */
-const camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    3000
-);
-
-/* ------------------ RENDERER ------------------ */
-const renderer = new THREE.WebGLRenderer({
-    canvas: document.getElementById('canvas'),
-    antialias: true
-});
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
-
-/* ------------------ LIGHTING ------------------ */
-scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-
-const sun = new THREE.DirectionalLight(0xffffff, 0.6);
-sun.position.set(100, 300, 100);
-scene.add(sun);
-
-/* ------------------ TEXTURES ------------------ */
-const loader = new THREE.TextureLoader();
-
-function loadTexture(path) {
-    return loader.load(
-        path,
-        () => console.log(`Loaded: ${path}`),
-        undefined,
-        err => console.error(`FAILED TO LOAD: ${path}`, err)
-    );
-}
-
-const topTex  = loadTexture('./grass-top.jpg');
-const sideTex = loadTexture('./grass-side.jpg');
-
-[topTex, sideTex].forEach(tex => {
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestFilter;
-});
-
-topTex.repeat.set(500, 500);
-sideTex.repeat.set(500, 2);
-
-/* ------------------ MATERIALS ------------------ */
-const materials = [
-    new THREE.MeshStandardMaterial({ map: sideTex }), // Right
-    new THREE.MeshStandardMaterial({ map: sideTex }), // Left
-    new THREE.MeshStandardMaterial({ map: topTex  }), // Top
-    new THREE.MeshStandardMaterial({ map: sideTex }), // Bottom
-    new THREE.MeshStandardMaterial({ map: sideTex }), // Front
-    new THREE.MeshStandardMaterial({ map: sideTex })  // Back
-];
-
-/* ------------------ BASEPLATE ------------------ */
-const floorGeo = new THREE.BoxGeometry(10000, 1, 10000);
-const baseplate = new THREE.Mesh(floorGeo, materials);
-baseplate.position.y = -0.5;
-scene.add(baseplate);
-
-/* ------------------ CONTROLS ------------------ */
-const controls = new PointerLockControls(camera, document.body);
-document.addEventListener('click', () => controls.lock());
-
-camera.position.set(0, 5, 0);
-
-/* ------------------ MOVEMENT ------------------ */
-let velocity = new THREE.Vector3();
-let moveForward = false;
-let moveBackward = false;
-let moveLeft = false;
-let moveRight = false;
-let canJump = false;
-
-document.addEventListener('keydown', e => {
-    switch (e.code) {
-        case 'KeyW': moveForward = true; break;
-        case 'KeyA': moveLeft = true; break;
-        case 'KeyS': moveBackward = true; break;
-        case 'KeyD': moveRight = true; break;
-        case 'Space':
-            if (canJump) {
-                velocity.y = 12;
-                canJump = false;
-            }
-        break;
-    }
-});
-
-document.addEventListener('keyup', e => {
-    switch (e.code) {
-        case 'KeyW': moveForward = false; break;
-        case 'KeyA': moveLeft = false; break;
-        case 'KeyS': moveBackward = false; break;
-        case 'KeyD': moveRight = false; break;
-    }
-});
-
-/* ------------------ LOOP ------------------ */
-let prevTime = performance.now();
-
-function animate() {
-    requestAnimationFrame(animate);
-
-    const time = performance.now();
-    const delta = Math.min((time - prevTime) / 1000, 0.1);
-
-    if (controls.isLocked) {
-        velocity.x -= velocity.x * 10 * delta;
-        velocity.z -= velocity.z * 10 * delta;
-        velocity.y -= 30 * delta;
-
-        const speed = 120;
-        if (moveForward) velocity.z -= speed * delta;
-        if (moveBackward) velocity.z += speed * delta;
-        if (moveLeft) velocity.x -= speed * delta;
-        if (moveRight) velocity.x += speed * delta;
-
-        controls.moveRight(-velocity.x * delta);
-        controls.moveForward(-velocity.z * delta);
-
-        camera.position.y += velocity.y * delta;
-
-        if (camera.position.y < 1.8) {
-            camera.position.y = 1.8;
-            velocity.y = 0;
-            canJump = true;
-        }
-    }
-
-    renderer.render(scene, camera);
-    prevTime = time;
-}
-
-animate();
-
-/* ------------------ RESIZE ------------------ */
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-});
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+    sun.position.set(100, 200, 100);
+    scene.add(sun);
+
+    // --- Texture Loading ---
+    const loader = new THREE.TextureLoader();
+    
+    // Attempting to load your specific files. 
+    // If they are .png, change the extension here!
+    const topTex = loader.load('grass-top.jpg');
+    const sideTex = loader.load('grass-side.jpg');
+
+    [topTex, sideTex].forEach(tex => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        // This makes the pixels look sharp/blocky like Minecraft
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+    });
+
+    topTex.repeat.set(5000, 5000);
+    sideTex.repeat.set(5000, 1);
+
+    const materials = [
+        new THREE.MeshStandardMaterial({ map: sideTex }), // Right
+        new THREE.MeshStandardMaterial({ map: sideTex }), // Left
+        new THREE.MeshStandardMaterial({ map: topTex }),  // Top
+        new THREE.MeshStandardMaterial({ map: sideTex }), // Bottom
+        new THREE.MeshStandardMaterial({ map: sideTex }), // Front
+        new THREE.MeshStandardMaterial({ map: sideTex })  // Back
+    ];
+
+    const floorGeo = new THREE.BoxGeometry(10000, 2, 10000);
+    const baseplate = new THREE.Mesh(floorGeo, materials);
+    baseplate.position.y = -1; 
+    scene.add(baseplate);
+
+    // --- Movement Logic ---
+    const controls = new PointerLockControls(camera, document.body);
+    document.addEventListener('click', () => controls.lock());
+
+    let velocity = new THREE.Vector3();
+    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+    let canJump = false;
+
+    camera.position.set(0, 50, 0); 
+
+    const onKeyDown = (e) => {
+        switch (e.code) {
+            case 'KeyW': moveForward = true; break;
+            case 'KeyA': moveLeft = true; break;
+            case 'KeyS': moveBackward = true; break;
+            case 'KeyD': moveRight = true; break;
+            case 'Space': if (canJump) { velocity.y = 14; canJump = false; } break;
+        }
+    };
+    const onKeyUp = (e) => {
+        switch (e.code) {
+            case 'KeyW': moveForward = false; break;
+            case 'KeyA': moveLeft = false; break;
+            case 'KeyS': moveBackward = false; break;
+            case 'KeyD': moveRight = false; break;
+        }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+
+    let prevTime = performance.now();
+    function animate() {
+        requestAnimationFrame(animate);
+        const time = performance.now();
+        const delta = Math.min((time - prevTime) / 1000, 0.1);
+
+        if (controls.isLocked) {
+            velocity.x -= velocity.x * 15.0 * delta;
+            velocity.z -= velocity.z * 15.0 * delta;
+            velocity.y -= 35.0 * delta; 
+
+            const speed = 150.0;
+            if (moveForward) velocity.z -= speed * delta;
+            if (moveBackward) velocity.z += speed * delta;
+            if (moveLeft) velocity.x -= speed * delta;
+            if (moveRight) velocity.x += speed * delta;
+
+            controls.moveRight(-velocity.x * delta);
+            controls.moveForward(-velocity.z * delta);
+            camera.position.y += velocity.y * delta;
+
+            if (camera.position.y < 1.8) {
+                velocity.y = 0;
+                camera.position.y = 1.8;
+                canJump = true;
+            }
+        }
+        renderer.render(scene, camera);
+        prevTime = time;
+    }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
 </script>
 </body>
 </html>
