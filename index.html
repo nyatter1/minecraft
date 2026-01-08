@@ -18,33 +18,49 @@
 
         #hotbar {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 4px; padding: 4px; background: rgba(0,0,0,0.5);
-            border: 2px solid #333; z-index: 20;
+            display: flex; line-height: 0; z-index: 20;
         }
 
         .slot {
-            width: 50px; height: 50px; background: rgba(0, 0, 0, 0.3);
-            border: 2px solid #555; position: relative; box-sizing: border-box;
+            width: 50px; height: 50px; 
+            background-image: url('slot.jpg');
+            background-size: 100% 100%; 
+            image-rendering: pixelated; 
+            position: relative;
+        }
+
+        /* Using your custom outline.jpg for the active slot */
+        .slot.active::after {
+            content: ""; position: absolute; 
+            top: -2px; left: -2px; right: -2px; bottom: -2px;
+            background-image: url('outline.jpg'); 
+            background-size: 100% 100%;
+            image-rendering: pixelated; z-index: 10; pointer-events: none;
+        }
+
+        .item-icon {
+            width: 32px; height: 32px;
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
             background-size: cover; image-rendering: pixelated;
         }
 
-        .slot.active { border: 4px solid white; background-color: rgba(255, 255, 255, 0.2); }
-
         .count {
-            position: absolute; bottom: 2px; right: 2px; color: white;
-            font-size: 12px; text-shadow: 1px 1px 2px black; font-weight: bold;
+            position: absolute; bottom: 4px; right: 4px; color: white;
+            font-size: 14px; text-shadow: 2px 2px 0px #000; font-weight: bold;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
     <div id="crosshair"></div>
     <div id="hotbar">
-        <div class="slot active" id="slot1"><span class="count"></span></div>
-        <div class="slot" id="slot2"><span class="count"></span></div>
-        <div class="slot" id="slot3"><span class="count"></span></div>
-        <div class="slot" id="slot4"><span class="count"></span></div>
-        <div class="slot" id="slot5"><span class="count"></span></div>
-        <div class="slot" id="slot6"><span class="count"></span></div>
+        <div class="slot active" id="slot0"><div class="item-icon"></div><span class="count"></span></div>
+        <div class="slot" id="slot1"><div class="item-icon"></div><span class="count"></span></div>
+        <div class="slot" id="slot2"><div class="item-icon"></div><span class="count"></span></div>
+        <div class="slot" id="slot3"><div class="item-icon"></div><span class="count"></span></div>
+        <div class="slot" id="slot4"><div class="item-icon"></div><span class="count"></span></div>
+        <div class="slot" id="slot5"><div class="item-icon"></div><span class="count"></span></div>
     </div>
 
     <canvas id="canvas"></canvas>
@@ -53,13 +69,13 @@
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
     import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
+    // --- CONFIG ---
     const CHUNK_SIZE = 16;
     const RENDER_DISTANCE = 2; 
+    let selectedSlot = 0;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 10, (RENDER_DISTANCE * CHUNK_SIZE) + 10);
-
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: false });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -70,46 +86,33 @@
     scene.add(sun);
 
     const loader = new THREE.TextureLoader();
-    const load = (file) => {
-        const t = loader.load(file);
-        t.magFilter = THREE.NearestFilter;
-        t.minFilter = THREE.NearestFilter;
-        return t;
+    const load = (f) => { let t = loader.load(f); t.magFilter = t.minFilter = THREE.NearestFilter; return t; };
+
+    // Textures & Materials
+    const textures = {
+        grass: { top: load('grass-top.jpg'), side: load('grass-side.jpg'), bottom: load('bottom.jpg'), icon: 'grass-side.jpg' },
+        dirt: { all: load('bottom.jpg'), icon: 'bottom.jpg' },
+        wood: { side: load('wood.jpg'), top: load('woodtop.jpg'), icon: 'wood.jpg' },
+        leaf: { all: load('leaf.jpg'), icon: 'leaf.jpg' }
     };
 
-    const grassTop = load('grass-top.jpg'), grassSide = load('grass-side.jpg'), dirtTex = load('bottom.jpg');
-    const woodSide = load('wood.jpg'), woodTop = load('woodtop.jpg'), leafTex = load('leaf.jpg');
-
-    const grassMats = [
-        new THREE.MeshStandardMaterial({ map: grassSide, name: 'grass' }), new THREE.MeshStandardMaterial({ map: grassSide }),
-        new THREE.MeshStandardMaterial({ map: grassTop }), new THREE.MeshStandardMaterial({ map: dirtTex }),
-        new THREE.MeshStandardMaterial({ map: grassSide }), new THREE.MeshStandardMaterial({ map: grassSide })
-    ];
-    const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex, name: 'dirt' });
-    const woodMats = [
-        new THREE.MeshStandardMaterial({ map: woodSide, name: 'wood' }), new THREE.MeshStandardMaterial({ map: woodSide }),
-        new THREE.MeshStandardMaterial({ map: woodTop }), new THREE.MeshStandardMaterial({ map: woodTop }),
-        new THREE.MeshStandardMaterial({ map: woodSide }), new THREE.MeshStandardMaterial({ map: woodSide })
-    ];
-    const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, transparent: true, alphaTest: 0.5, name: 'leaf' });
-
-    // --- INVENTORY SYSTEM ---
-    const inventory = [null, null, null, null, null, null];
-    const iconMap = {
-        'grass': 'grass-side.jpg',
-        'dirt': 'bottom.jpg',
-        'wood': 'wood.jpg',
-        'leaf': 'leaf.jpg'
+    const mats = {
+        grass: [new THREE.MeshStandardMaterial({map: textures.grass.side}), new THREE.MeshStandardMaterial({map: textures.grass.side}), new THREE.MeshStandardMaterial({map: textures.grass.top}), new THREE.MeshStandardMaterial({map: textures.grass.bottom}), new THREE.MeshStandardMaterial({map: textures.grass.side}), new THREE.MeshStandardMaterial({map: textures.grass.side})],
+        dirt: new THREE.MeshStandardMaterial({map: textures.dirt.all}),
+        wood: [new THREE.MeshStandardMaterial({map: textures.wood.side}), new THREE.MeshStandardMaterial({map: textures.wood.side}), new THREE.MeshStandardMaterial({map: textures.wood.top}), new THREE.MeshStandardMaterial({map: textures.wood.top}), new THREE.MeshStandardMaterial({map: textures.wood.side}), new THREE.MeshStandardMaterial({map: textures.wood.side})],
+        leaf: new THREE.MeshStandardMaterial({map: textures.leaf.all, transparent: true, alphaTest: 0.5})
     };
+
+    // --- INVENTORY LOGIC ---
+    const inventory = Array(6).fill(null);
+    const MAX_STACK = 64;
 
     function addToInventory(type) {
-        // Try to find existing stack
-        let slotIndex = inventory.findIndex(item => item && item.type === type);
+        // Find existing stack with room
+        let slotIndex = inventory.findIndex(item => item && item.type === type && item.count < MAX_STACK);
         
-        if (slotIndex === -1) {
-            // Find first empty slot
-            slotIndex = inventory.findIndex(item => item === null);
-        }
+        // If no existing stack, find empty slot
+        if (slotIndex === -1) slotIndex = inventory.findIndex(item => item === null);
 
         if (slotIndex !== -1) {
             if (inventory[slotIndex]) {
@@ -123,56 +126,33 @@
 
     function updateUI() {
         inventory.forEach((item, i) => {
-            const slot = document.getElementById(`slot${i+1}`);
-            const countEl = slot.querySelector('.count');
+            const slot = document.getElementById(`slot${i}`);
+            const icon = slot.querySelector('.item-icon');
+            const count = slot.querySelector('.count');
             if (item) {
-                slot.style.backgroundImage = `url(${iconMap[item.type]})`;
-                countEl.innerText = item.count;
+                icon.style.backgroundImage = `url(${textures[item.type].icon})`;
+                count.innerText = item.count;
             } else {
-                slot.style.backgroundImage = 'none';
-                countEl.innerText = '';
+                icon.style.backgroundImage = 'none';
+                count.innerText = '';
             }
         });
     }
 
+    // --- WORLD LOGIC ---
     let blocks = []; 
     const chunks = new Map();
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
-
-    const selectionOutline = new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02)), 
-        new THREE.LineBasicMaterial({ color: 0x000000 })
-    );
+    const selectionOutline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02)), new THREE.LineBasicMaterial({ color: 0x000000 }));
     scene.add(selectionOutline);
 
-    function seededRandom(x, z) {
-        const val = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453123;
-        return val - Math.floor(val);
-    }
-
-    function createTree(x, z, group) {
-        const trunkHeight = 4 + Math.floor(seededRandom(x, z) * 2);
-        for (let y = 1; y <= trunkHeight; y++) {
-            const log = new THREE.Mesh(blockGeo, woodMats);
-            log.position.set(x, y, z);
-            log.userData.type = 'wood';
-            group.add(log);
-            blocks.push(log);
-        }
-        for (let ly = -2; ly <= 2; ly++) {
-            let radius = (ly > 0) ? 1 : 2;
-            for (let lx = -radius; lx <= radius; lx++) {
-                for (let lz = -radius; lz <= radius; lz++) {
-                    if (ly === 2 && (Math.abs(lx) + Math.abs(lz) > 1)) continue;
-                    if (lx === 0 && lz === 0 && ly < 0) continue;
-                    const leaf = new THREE.Mesh(blockGeo, leafMat);
-                    leaf.position.set(x + lx, trunkHeight + ly, z + lz);
-                    leaf.userData.type = 'leaf';
-                    group.add(leaf);
-                    blocks.push(leaf);
-                }
-            }
-        }
+    function createBlock(type, x, y, z, parentGroup) {
+        const mesh = new THREE.Mesh(blockGeo, mats[type]);
+        mesh.position.set(x, y, z);
+        mesh.userData.type = type;
+        parentGroup.add(mesh);
+        blocks.push(mesh);
+        return mesh;
     }
 
     function createChunk(cx, cz) {
@@ -181,20 +161,11 @@
             for (let z = 0; z < CHUNK_SIZE; z++) {
                 const px = cx * CHUNK_SIZE + x;
                 const pz = cz * CHUNK_SIZE + z;
-                
-                const grass = new THREE.Mesh(blockGeo, grassMats);
-                grass.position.set(px, 0, pz);
-                grass.userData.type = 'grass';
-                group.add(grass);
-                blocks.push(grass);
-
-                const dirt = new THREE.Mesh(blockGeo, dirtMat);
-                dirt.position.set(px, -1, pz);
-                dirt.userData.type = 'dirt';
-                group.add(dirt);
-                blocks.push(dirt);
-
-                if (seededRandom(px, pz) > 0.985) createTree(px, pz, group);
+                createBlock('grass', px, 0, pz, group);
+                createBlock('dirt', px, -1, pz, group);
+                if (Math.sin(px * 12.98 + pz * 78.23) > 0.97) { // Simple tree spawn
+                    for(let h=1; h<5; h++) createBlock('wood', px, h, pz, group);
+                }
             }
         }
         scene.add(group);
@@ -204,21 +175,10 @@
     function updateChunks() {
         const curCX = Math.floor(camera.position.x / CHUNK_SIZE);
         const curCZ = Math.floor(camera.position.z / CHUNK_SIZE);
-
         for (let x = curCX - RENDER_DISTANCE; x <= curCX + RENDER_DISTANCE; x++) {
             for (let z = curCZ - RENDER_DISTANCE; z <= curCZ + RENDER_DISTANCE; z++) {
                 const key = `${x},${z}`;
                 if (!chunks.has(key)) chunks.set(key, createChunk(x, z));
-            }
-        }
-
-        for (const [key, group] of chunks) {
-            const [cx, cz] = key.split(',').map(Number);
-            if (Math.abs(cx - curCX) > RENDER_DISTANCE + 1 || Math.abs(cz - curCZ) > RENDER_DISTANCE + 1) {
-                scene.remove(group);
-                const idsToRemove = new Set(group.children);
-                blocks = blocks.filter(b => !idsToRemove.has(b));
-                chunks.delete(key);
             }
         }
     }
@@ -227,55 +187,62 @@
     const raycaster = new THREE.Raycaster();
 
     document.addEventListener('mousedown', (e) => {
-        if (!controls.isLocked) {
-            controls.lock();
-            document.documentElement.requestFullscreen().catch(() => {});
-        } else if (e.button === 0) {
-            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-            const intersects = raycaster.intersectObjects(blocks, false);
-            if (intersects.length > 0 && intersects[0].distance < 6) {
-                const block = intersects[0].object;
-                
-                // Add to inventory based on saved userData type
-                if (block.userData.type) addToInventory(block.userData.type);
-                
-                if (block.parent) block.parent.remove(block);
-                const index = blocks.indexOf(block);
-                if (index > -1) blocks.splice(index, 1);
+        if (!controls.isLocked) return controls.lock();
+        
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        const intersects = raycaster.intersectObjects(blocks, false);
+        
+        if (intersects.length > 0 && intersects[0].distance < 6) {
+            const intersect = intersects[0];
+            
+            if (e.button === 0) { // Left Click: Break
+                addToInventory(intersect.object.userData.type);
+                intersect.object.parent.remove(intersect.object);
+                blocks.splice(blocks.indexOf(intersect.object), 1);
+            } 
+            else if (e.button === 2) { // Right Click: Place
+                const item = inventory[selectedSlot];
+                if (item && item.count > 0) {
+                    const pos = intersect.object.position.clone().add(intersect.face.normal);
+                    // Create block in the same group as the clicked one
+                    createBlock(item.type, pos.x, pos.y, pos.z, intersect.object.parent);
+                    item.count--;
+                    if (item.count <= 0) inventory[selectedSlot] = null;
+                    updateUI();
+                }
             }
         }
     });
 
+    // Disable context menu for right-click
+    document.addEventListener('contextmenu', e => e.preventDefault());
+
+    // --- CONTROLS ---
+    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
     let velocity = new THREE.Vector3();
-    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-    let canJump = false;
-    camera.position.set(8, 3, 8);
 
-    const onKeyDown = (e) => {
-        switch (e.code) {
-            case 'KeyW': moveForward = true; break;
-            case 'KeyA': moveLeft = true; break;
-            case 'KeyS': moveBackward = true; break;
-            case 'KeyD': moveRight = true; break;
-            case 'Space': if (canJump) { velocity.y = 9; canJump = false; } break;
-            case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5': case 'Digit6':
-                document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
-                document.getElementById('slot' + e.key.replace('Digit', '')).classList.add('active');
-                break;
+    document.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyW') moveForward = true;
+        if (e.code === 'KeyS') moveBackward = true;
+        if (e.code === 'KeyA') moveLeft = true;
+        if (e.code === 'KeyD') moveRight = true;
+        if (e.code === 'Space' && canJump) { velocity.y = 9; canJump = false; }
+        if (e.key >= 1 && e.key <= 6) {
+            document.getElementById(`slot${selectedSlot}`).classList.remove('active');
+            selectedSlot = e.key - 1;
+            document.getElementById(`slot${selectedSlot}`).classList.add('active');
         }
-    };
-    const onKeyUp = (e) => {
-        switch (e.code) {
-            case 'KeyW': moveForward = false; break;
-            case 'KeyA': moveLeft = false; break;
-            case 'KeyS': moveBackward = false; break;
-            case 'KeyD': moveRight = false; break;
-        }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
+    });
+    document.addEventListener('keyup', (e) => {
+        if (e.code === 'KeyW') moveForward = false;
+        if (e.code === 'KeyS') moveBackward = false;
+        if (e.code === 'KeyA') moveLeft = false;
+        if (e.code === 'KeyD') moveRight = false;
+    });
 
+    camera.position.set(8, 5, 8);
     let prevTime = performance.now();
+
     function animate() {
         requestAnimationFrame(animate);
         const time = performance.now();
@@ -285,30 +252,27 @@
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
             velocity.y -= 24.0 * delta; 
-            const speed = 75.0;
-            if (moveForward) velocity.z -= speed * delta;
-            if (moveBackward) velocity.z += speed * delta;
-            if (moveLeft) velocity.x -= speed * delta;
-            if (moveRight) velocity.x += speed * delta;
+
+            if (moveForward) velocity.z -= 75.0 * delta;
+            if (moveBackward) velocity.z += 75.0 * delta;
+            if (moveLeft) velocity.x -= 75.0 * delta;
+            if (moveRight) velocity.x += 75.0 * delta;
 
             controls.moveRight(velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
 
-            if (camera.position.y < 2.1) {
-                velocity.y = 0; camera.position.y = 2.1; canJump = true;
-            }
+            if (camera.position.y < 2.5) { velocity.y = 0; camera.position.y = 2.5; canJump = true; }
 
-            if (Math.round(time) % 20 === 0) updateChunks();
+            updateChunks();
 
+            // Outline
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             const intersects = raycaster.intersectObjects(blocks, false);
             if (intersects.length > 0 && intersects[0].distance < 6) {
                 selectionOutline.position.copy(intersects[0].object.position);
                 selectionOutline.visible = true;
-            } else {
-                selectionOutline.visible = false;
-            }
+            } else { selectionOutline.visible = false; }
         }
         renderer.render(scene, camera);
         prevTime = time;
