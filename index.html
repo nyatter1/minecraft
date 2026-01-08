@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Infinite Baseplate - Wood Blocks</title>
+    <title>Minecraft Scale Baseplate</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; }
         canvas { display: block; width: 100vw; height: 100vh; }
@@ -17,24 +17,21 @@
     // --- Scene Setup ---
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 20, 500); 
+    scene.fog = new THREE.Fog(0x87CEEB, 5, 100); // Tighter fog for smaller scale
 
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     const sun = new THREE.DirectionalLight(0xffffff, 0.6);
-    sun.position.set(100, 200, 100);
+    sun.position.set(10, 20, 10);
     scene.add(sun);
 
     // --- Texture Loading ---
     const loader = new THREE.TextureLoader();
-    
-    // Grass Textures
     const grassTop = loader.load('grass-top.jpg');
     const grassSide = loader.load('grass-side.jpg');
-    // Wood Textures
     const woodSide = loader.load('wood.jpg');
     const woodTop = loader.load('woodtop.jpg');
 
@@ -43,9 +40,9 @@
         tex.minFilter = THREE.NearestFilter;
     });
 
-    // --- Baseplate ---
+    // --- Baseplate (1000x1000 meters) ---
     grassTop.wrapS = grassTop.wrapT = THREE.RepeatWrapping;
-    grassTop.repeat.set(5000, 5000);
+    grassTop.repeat.set(1000, 1000); // 1 tile per meter
     
     const grassMaterials = [
         new THREE.MeshStandardMaterial({ map: grassSide }),
@@ -55,31 +52,29 @@
         new THREE.MeshStandardMaterial({ map: grassSide }),
         new THREE.MeshStandardMaterial({ map: grassSide })
     ];
-    const baseplate = new THREE.Mesh(new THREE.BoxGeometry(10000, 2, 10000), grassMaterials);
-    baseplate.position.y = -1; 
+    // Flat baseplate
+    const baseplate = new THREE.Mesh(new THREE.BoxGeometry(1000, 2, 1000), grassMaterials);
+    baseplate.position.y = -1; // Surface at y=0
     scene.add(baseplate);
 
-    // --- Wooden Blocks ---
+    // --- Wooden Blocks (1x1x1 meters) ---
     const woodMaterials = [
-        new THREE.MeshStandardMaterial({ map: woodSide }), // Right
-        new THREE.MeshStandardMaterial({ map: woodSide }), // Left
-        new THREE.MeshStandardMaterial({ map: woodTop }),  // Top
-        new THREE.MeshStandardMaterial({ map: woodTop }),  // Bottom
-        new THREE.MeshStandardMaterial({ map: woodSide }), // Front
-        new THREE.MeshStandardMaterial({ map: woodSide })  // Back
+        new THREE.MeshStandardMaterial({ map: woodSide }), 
+        new THREE.MeshStandardMaterial({ map: woodSide }), 
+        new THREE.MeshStandardMaterial({ map: woodTop }),  
+        new THREE.MeshStandardMaterial({ map: woodTop }),  
+        new THREE.MeshStandardMaterial({ map: woodSide }), 
+        new THREE.MeshStandardMaterial({ map: woodSide })
     ];
 
-    const blockGeo = new THREE.BoxGeometry(2, 2, 2);
-    const blocks = [];
-
-    // Create 50 random wooden blocks
-    for(let i = 0; i < 50; i++) {
+    const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+    for(let i = 0; i < 100; i++) {
         const block = new THREE.Mesh(blockGeo, woodMaterials);
-        block.position.x = (Math.random() - 0.5) * 200;
-        block.position.z = (Math.random() - 0.5) * 200;
-        block.position.y = 1; // Sit on top of the grass (since grass top is at y=0)
+        // Randomly scatter within 50 meters of center
+        block.position.x = Math.floor((Math.random() - 0.5) * 60);
+        block.position.z = Math.floor((Math.random() - 0.5) * 60);
+        block.position.y = 0.5; // Half of 1m height
         scene.add(block);
-        blocks.push(block);
     }
 
     // --- Movement Logic ---
@@ -90,7 +85,8 @@
     let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
     let canJump = false;
 
-    camera.position.set(0, 50, 0); 
+    // Start in the air
+    camera.position.set(0, 10, 5); 
 
     const onKeyDown = (e) => {
         switch (e.code) {
@@ -98,7 +94,7 @@
             case 'KeyA': moveLeft = true; break;
             case 'KeyS': moveBackward = true; break;
             case 'KeyD': moveRight = true; break;
-            case 'Space': if (canJump) { velocity.y = 14; canJump = false; } break;
+            case 'Space': if (canJump) { velocity.y = 10; canJump = false; } break;
         }
     };
     const onKeyUp = (e) => {
@@ -112,6 +108,7 @@
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
 
+    // --- Game Loop ---
     let prevTime = performance.now();
     function animate() {
         requestAnimationFrame(animate);
@@ -119,24 +116,28 @@
         const delta = Math.min((time - prevTime) / 1000, 0.1);
 
         if (controls.isLocked) {
-            velocity.x -= velocity.x * 15.0 * delta;
-            velocity.z -= velocity.z * 15.0 * delta;
-            velocity.y -= 35.0 * delta; 
+            // Friction/Damping
+            velocity.x -= velocity.x * 10.0 * delta;
+            velocity.z -= velocity.z * 10.0 * delta;
+            velocity.y -= 25.0 * delta; // Gravity
 
-            const speed = 150.0;
+            const speed = 80.0;
             if (moveForward) velocity.z -= speed * delta;
             if (moveBackward) velocity.z += speed * delta;
+            
+            // Fixed Left/Right Inversion here:
             if (moveLeft) velocity.x -= speed * delta;
             if (moveRight) velocity.x += speed * delta;
 
-            controls.moveRight(-velocity.x * delta);
+            // Apply movement
+            controls.moveRight(velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
 
-            // Collision with Ground
-            if (camera.position.y < 1.8) {
+            // Ground Collision (1.62m is Minecraft eye level)
+            if (camera.position.y < 1.62) {
                 velocity.y = 0;
-                camera.position.y = 1.8;
+                camera.position.y = 1.62;
                 canJump = true;
             }
         }
