@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft - 100 Layers</title>
+    <title>Minecraft - Infinite Depth</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; width: 100vw; height: 100vh; }
         canvas { display: block; width: 100%; height: 100%; }
@@ -42,7 +42,6 @@
             font-size: 14px; text-shadow: 2px 2px 0px #000; font-weight: bold;
         }
 
-        /* The Steve Hand Sprite */
         #hand-container {
             position: absolute; bottom: 0; right: 10%; width: 300px; height: 300px;
             pointer-events: none; z-index: 25; overflow: hidden;
@@ -75,8 +74,10 @@
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
     import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
-    const CHUNK_SIZE = 8; // Smaller chunks for 100-layer depth stability
-    const RENDER_DISTANCE = 3; 
+    const CHUNK_SIZE = 8;
+    const RENDER_DISTANCE = 3;
+    const MAX_DEPTH = -200;
+    let currentDeepestLayer = -10; // Start depth
     let selectedSlot = 0;
 
     const scene = new THREE.Scene();
@@ -97,7 +98,7 @@
         grass: { top: load('grass-top.jpg'), side: load('grass-side.jpg'), bottom: load('bottom.jpg'), icon: 'grass-side.jpg' },
         dirt: { all: load('bottom.jpg'), icon: 'bottom.jpg' },
         stone: { all: load('stone.jpg'), icon: 'stone.jpg' },
-        deepslate: { all: load('stone.jpg'), icon: 'stone.jpg' }, // Swap with deepslate.jpg if available
+        deepslate: { all: load('stone.jpg'), icon: 'stone.jpg' }, 
         bedrock: { all: load('stone.jpg'), icon: 'stone.jpg' },
         wood: { side: load('wood.jpg'), top: load('woodtop.jpg'), icon: 'wood.jpg' },
         leaf: { all: load('leaf.jpg'), icon: 'leaf.jpg' }
@@ -117,7 +118,7 @@
     const MAX_STACK = 64;
 
     function addToInventory(type) {
-        if(type === 'bedrock') return; // Can't collect bedrock
+        if(type === 'bedrock') return;
         let slotIndex = inventory.findIndex(item => item && item.type === type && item.count < MAX_STACK);
         if (slotIndex === -1) slotIndex = inventory.findIndex(item => item === null);
         if (slotIndex !== -1) {
@@ -157,20 +158,31 @@
         return mesh;
     }
 
-    function createChunk(cx, cz) {
-        const group = new THREE.Group();
+    // Dynamic layer generation
+    function generateLayers(cx, cz, group, startY, endY) {
         for (let x = 0; x < CHUNK_SIZE; x++) {
             for (let z = 0; z < CHUNK_SIZE; z++) {
                 const px = cx * CHUNK_SIZE + x;
                 const pz = cz * CHUNK_SIZE + z;
-                
-                createBlock('grass', px, 0, pz, group);
-                for(let y = -1; y > -4; y--) createBlock('dirt', px, y, pz, group);
-                for(let y = -4; y > -50; y--) createBlock('stone', px, y, pz, group);
-                for(let y = -50; y > -99; y--) createBlock('deepslate', px, y, pz, group);
-                createBlock('bedrock', px, -99, pz, group);
+                for (let y = startY; y >= endY; y--) {
+                    if (y < MAX_DEPTH) continue;
+                    
+                    let type = 'stone';
+                    if (y === 0) type = 'grass';
+                    else if (y > -4) type = 'dirt';
+                    else if (y <= -50) type = 'deepslate';
+                    
+                    if (y === MAX_DEPTH) type = 'bedrock';
+                    
+                    createBlock(type, px, y, pz, group);
+                }
             }
         }
+    }
+
+    function createChunk(cx, cz) {
+        const group = new THREE.Group();
+        generateLayers(cx, cz, group, 0, currentDeepestLayer);
         scene.add(group);
         return group;
     }
@@ -178,6 +190,17 @@
     function updateChunks() {
         const curCX = Math.floor(camera.position.x / CHUNK_SIZE);
         const curCZ = Math.floor(camera.position.z / CHUNK_SIZE);
+        
+        // Check if player is near current bottom
+        if (camera.position.y < currentDeepestLayer + 10 && currentDeepestLayer > MAX_DEPTH) {
+            const nextDepth = Math.max(MAX_DEPTH, currentDeepestLayer - 4);
+            chunks.forEach((group, key) => {
+                const [cx, cz] = key.split(',').map(Number);
+                generateLayers(cx, cz, group, currentDeepestLayer - 1, nextDepth);
+            });
+            currentDeepestLayer = nextDepth;
+        }
+
         for (let x = curCX - RENDER_DISTANCE; x <= curCX + RENDER_DISTANCE; x++) {
             for (let z = curCZ - RENDER_DISTANCE; z <= curCZ + RENDER_DISTANCE; z++) {
                 const key = `${x},${z}`;
@@ -192,8 +215,6 @@
 
     document.addEventListener('mousedown', (e) => {
         if (!controls.isLocked) return controls.lock();
-        
-        // Hand animation
         hand.classList.add('swing');
         setTimeout(() => hand.classList.remove('swing'), 100);
 
@@ -207,8 +228,7 @@
                     intersect.object.parent.remove(intersect.object);
                     blocks.splice(blocks.indexOf(intersect.object), 1);
                 }
-            } 
-            else if (e.button === 2) {
+            } else if (e.button === 2) {
                 const item = inventory[selectedSlot];
                 if (item && item.count > 0) {
                     const pos = intersect.object.position.clone().add(intersect.face.normal);
@@ -256,7 +276,7 @@
         if (controls.isLocked) {
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
-            velocity.y -= 25.0 * delta; // Gravity
+            velocity.y -= 25.0 * delta; 
 
             if (moveForward) velocity.z -= 60.0 * delta;
             if (moveBackward) velocity.z += 60.0 * delta;
@@ -267,7 +287,6 @@
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
 
-            // --- IMPROVED VOXEL PHYSICS ---
             const playerRay = new THREE.Raycaster(camera.position, new THREE.Vector3(0, -1, 0), 0, 1.7);
             const intersections = playerRay.intersectObjects(blocks);
             
@@ -278,9 +297,7 @@
                     velocity.y = 0;
                     canJump = true;
                 }
-            } else {
-                canJump = false; // Fall if nothing is under feet
-            }
+            } else { canJump = false; }
 
             updateChunks();
 
