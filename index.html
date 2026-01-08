@@ -69,7 +69,7 @@
     import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
     // --- CONFIG ---
-    const CHUNK_SIZE = 16;
+    const CHUNK_SIZE = 12; // Reduced slightly for depth performance
     const RENDER_DISTANCE = 2; 
     let selectedSlot = 0;
 
@@ -91,24 +91,31 @@
     const textures = {
         grass: { top: load('grass-top.jpg'), side: load('grass-side.jpg'), bottom: load('bottom.jpg'), icon: 'grass-side.jpg' },
         dirt: { all: load('bottom.jpg'), icon: 'bottom.jpg' },
+        stone: { all: load('stone.jpg'), icon: 'stone.jpg' }, // Ensure stone.jpg exists
         wood: { side: load('wood.jpg'), top: load('woodtop.jpg'), icon: 'wood.jpg' },
-        leaf: { all: load('leaf.jpg'), icon: 'leaf.jpg' }
+        leaf: { all: load('leaf.jpg'), icon: 'leaf.jpg' },
+        hand: load('minecraft hand.png')
     };
 
     const mats = {
         grass: [new THREE.MeshStandardMaterial({map: textures.grass.side}), new THREE.MeshStandardMaterial({map: textures.grass.side}), new THREE.MeshStandardMaterial({map: textures.grass.top}), new THREE.MeshStandardMaterial({map: textures.grass.bottom}), new THREE.MeshStandardMaterial({map: textures.grass.side}), new THREE.MeshStandardMaterial({map: textures.grass.side})],
         dirt: new THREE.MeshStandardMaterial({map: textures.dirt.all}),
+        stone: new THREE.MeshStandardMaterial({map: textures.stone.all}),
         wood: [new THREE.MeshStandardMaterial({map: textures.wood.side}), new THREE.MeshStandardMaterial({map: textures.wood.side}), new THREE.MeshStandardMaterial({map: textures.wood.top}), new THREE.MeshStandardMaterial({map: textures.wood.top}), new THREE.MeshStandardMaterial({map: textures.wood.side}), new THREE.MeshStandardMaterial({map: textures.wood.side})],
         leaf: new THREE.MeshStandardMaterial({map: textures.leaf.all, transparent: true, alphaTest: 0.5})
     };
 
     // --- HAND / ARM ---
     const handGroup = new THREE.Group();
-    const handGeo = new THREE.BoxGeometry(0.3, 0.3, 0.8);
-    const handMat = new THREE.MeshStandardMaterial({ color: 0xe0ac69 }); // Skin tone
-    const handMesh = new THREE.Mesh(handGeo, handMat);
-    handMesh.position.set(0.5, -0.4, -0.6);
-    handMesh.rotation.x = -0.2;
+    const handGeo = new THREE.BoxGeometry(0.18, 0.18, 0.6);
+    // Apply texture to all sides but keep the "front" (fist) looking skin-toned
+    const handMats = Array(6).fill(new THREE.MeshStandardMaterial({ map: textures.hand }));
+    handMats[4] = new THREE.MeshStandardMaterial({ color: 0xe0ac69 }); // "Fist" end
+    
+    const handMesh = new THREE.Mesh(handGeo, handMats);
+    handMesh.position.set(0.4, -0.3, -0.4);
+    handMesh.rotation.x = -0.15;
+    handMesh.rotation.y = -0.1;
     handGroup.add(handMesh);
     camera.add(handGroup);
     scene.add(camera);
@@ -164,7 +171,6 @@
     function createTree(x, z, group) {
         const height = 4 + Math.floor(Math.random() * 2);
         for (let y = 1; y <= height; y++) createBlock('wood', x, y, z, group);
-        // Better leaves with top layer
         for (let ly = -2; ly <= 2; ly++) {
             let radius = ly > 0 ? (ly === 2 ? 0 : 1) : 2;
             for (let lx = -radius; lx <= radius; lx++) {
@@ -182,8 +188,14 @@
             for (let z = 0; z < CHUNK_SIZE; z++) {
                 const px = cx * CHUNK_SIZE + x;
                 const pz = cz * CHUNK_SIZE + z;
-                createBlock('grass', px, 0, pz, group);
-                createBlock('dirt', px, -1, pz, group);
+                
+                // LAYER SYSTEM
+                createBlock('grass', px, 0, pz, group);      // Surface
+                createBlock('dirt', px, -1, pz, group);     // Sub-surface
+                createBlock('dirt', px, -2, pz, group);
+                createBlock('stone', px, -3, pz, group);    // Deep Stone
+                createBlock('stone', px, -4, pz, group);
+
                 const treeChance = Math.sin(px * 12.9898 + pz * 78.233) * 43758.5453;
                 if ((treeChance - Math.floor(treeChance)) > 0.985) createTree(px, pz, group);
             }
@@ -210,7 +222,6 @@
     document.addEventListener('mousedown', (e) => {
         if (!controls.isLocked) return controls.lock();
         
-        // Trigger hand swing
         isSwinging = true;
         swingStartTime = performance.now();
 
@@ -218,12 +229,12 @@
         const intersects = raycaster.intersectObjects(blocks, false);
         if (intersects.length > 0 && intersects[0].distance < 5) {
             const intersect = intersects[0];
-            if (e.button === 0) { // Left Click: Break
+            if (e.button === 0) { // Break
                 addToInventory(intersect.object.userData.type);
                 intersect.object.parent.remove(intersect.object);
                 blocks.splice(blocks.indexOf(intersect.object), 1);
             } 
-            else if (e.button === 2) { // Right Click: Place
+            else if (e.button === 2) { // Place
                 const item = inventory[selectedSlot];
                 if (item && item.count > 0) {
                     const pos = intersect.object.position.clone().add(intersect.face.normal);
@@ -269,10 +280,9 @@
         const delta = Math.min((time - prevTime) / 1000, 0.1);
 
         if (controls.isLocked) {
-            // Physics
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
-            velocity.y -= 25.0 * delta; // Gravity
+            velocity.y -= 25.0 * delta; 
 
             if (moveForward) velocity.z -= 60.0 * delta;
             if (moveBackward) velocity.z += 60.0 * delta;
@@ -283,7 +293,7 @@
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
 
-            // GROUND COLLISION
+            // DYNAMIC PHYSICS COLLISION
             downRay.set(camera.position, new THREE.Vector3(0, -1, 0));
             const groundCheck = downRay.intersectObjects(blocks);
             if (groundCheck.length > 0 && groundCheck[0].distance < 1.7) {
@@ -292,7 +302,7 @@
                 canJump = true;
             }
 
-            // Hand Swing Animation
+            // Hand Swing
             if (isSwinging) {
                 const elapsed = time - swingStartTime;
                 if (elapsed < 200) {
@@ -303,15 +313,15 @@
                 }
             }
 
-            // Bobbing effect
+            // Hand Bobbing
             if (moveForward || moveBackward || moveLeft || moveRight) {
-                handGroup.position.y = Math.sin(time * 0.01) * 0.02;
-                handGroup.position.x = Math.cos(time * 0.005) * 0.02;
+                handGroup.position.y = Math.sin(time * 0.01) * 0.01;
+                handGroup.position.x = Math.cos(time * 0.005) * 0.01;
             }
 
             updateChunks();
 
-            // Selection Outline
+            // Outline
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             const intersects = raycaster.intersectObjects(blocks, false);
             if (intersects.length > 0 && intersects[0].distance < 5) {
