@@ -29,7 +29,6 @@
             position: relative;
         }
 
-        /* Using your custom outline.jpg for the active slot */
         .slot.active::after {
             content: ""; position: absolute; 
             top: -2px; left: -2px; right: -2px; bottom: -2px;
@@ -108,18 +107,11 @@
     const MAX_STACK = 64;
 
     function addToInventory(type) {
-        // Find existing stack with room
         let slotIndex = inventory.findIndex(item => item && item.type === type && item.count < MAX_STACK);
-        
-        // If no existing stack, find empty slot
         if (slotIndex === -1) slotIndex = inventory.findIndex(item => item === null);
-
         if (slotIndex !== -1) {
-            if (inventory[slotIndex]) {
-                inventory[slotIndex].count++;
-            } else {
-                inventory[slotIndex] = { type: type, count: 1 };
-            }
+            if (inventory[slotIndex]) { inventory[slotIndex].count++; } 
+            else { inventory[slotIndex] = { type: type, count: 1 }; }
             updateUI();
         }
     }
@@ -155,6 +147,28 @@
         return mesh;
     }
 
+    function createTree(x, z, group) {
+        const height = 4 + Math.floor(Math.random() * 2);
+        // Trunk
+        for (let y = 1; y <= height; y++) {
+            createBlock('wood', x, y, z, group);
+        }
+        // Leaves
+        for (let lx = -2; lx <= 2; lx++) {
+            for (let ly = -2; ly <= 1; ly++) {
+                for (let lz = -2; lz <= 2; lz++) {
+                    // Create a rounded leaf shape
+                    const distance = Math.sqrt(lx*lx + ly*ly + lz*lz);
+                    if (distance < 2.5) {
+                        // Don't place leaves where the trunk is
+                        if (lx === 0 && lz === 0 && ly < 0) continue;
+                        createBlock('leaf', x + lx, height + ly + 1, z + lz, group);
+                    }
+                }
+            }
+        }
+    }
+
     function createChunk(cx, cz) {
         const group = new THREE.Group();
         for (let x = 0; x < CHUNK_SIZE; x++) {
@@ -163,8 +177,11 @@
                 const pz = cz * CHUNK_SIZE + z;
                 createBlock('grass', px, 0, pz, group);
                 createBlock('dirt', px, -1, pz, group);
-                if (Math.sin(px * 12.98 + pz * 78.23) > 0.97) { // Simple tree spawn
-                    for(let h=1; h<5; h++) createBlock('wood', px, h, pz, group);
+                
+                // Seeded random for trees so they stay in place
+                const treeChance = Math.sin(px * 12.9898 + pz * 78.233) * 43758.5453;
+                if ((treeChance - Math.floor(treeChance)) > 0.985) {
+                    createTree(px, pz, group);
                 }
             }
         }
@@ -181,6 +198,16 @@
                 if (!chunks.has(key)) chunks.set(key, createChunk(x, z));
             }
         }
+        // Cleanup far chunks
+        for (const [key, group] of chunks) {
+            const [cx, cz] = key.split(',').map(Number);
+            if (Math.abs(cx - curCX) > RENDER_DISTANCE + 1 || Math.abs(cz - curCZ) > RENDER_DISTANCE + 1) {
+                scene.remove(group);
+                const children = new Set(group.children);
+                blocks = blocks.filter(b => !children.has(b));
+                chunks.delete(key);
+            }
+        }
     }
 
     const controls = new PointerLockControls(camera, document.body);
@@ -188,23 +215,19 @@
 
     document.addEventListener('mousedown', (e) => {
         if (!controls.isLocked) return controls.lock();
-        
         raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
         const intersects = raycaster.intersectObjects(blocks, false);
-        
         if (intersects.length > 0 && intersects[0].distance < 6) {
             const intersect = intersects[0];
-            
-            if (e.button === 0) { // Left Click: Break
+            if (e.button === 0) { // Break
                 addToInventory(intersect.object.userData.type);
                 intersect.object.parent.remove(intersect.object);
                 blocks.splice(blocks.indexOf(intersect.object), 1);
             } 
-            else if (e.button === 2) { // Right Click: Place
+            else if (e.button === 2) { // Place
                 const item = inventory[selectedSlot];
                 if (item && item.count > 0) {
                     const pos = intersect.object.position.clone().add(intersect.face.normal);
-                    // Create block in the same group as the clicked one
                     createBlock(item.type, pos.x, pos.y, pos.z, intersect.object.parent);
                     item.count--;
                     if (item.count <= 0) inventory[selectedSlot] = null;
@@ -214,10 +237,8 @@
         }
     });
 
-    // Disable context menu for right-click
     document.addEventListener('contextmenu', e => e.preventDefault());
 
-    // --- CONTROLS ---
     let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, canJump = false;
     let velocity = new THREE.Vector3();
 
@@ -240,7 +261,7 @@
         if (e.code === 'KeyD') moveRight = false;
     });
 
-    camera.position.set(8, 5, 8);
+    camera.position.set(8, 10, 8);
     let prevTime = performance.now();
 
     function animate() {
@@ -262,11 +283,11 @@
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
 
+            // Simple ground collision
             if (camera.position.y < 2.5) { velocity.y = 0; camera.position.y = 2.5; canJump = true; }
 
-            updateChunks();
+            if (Math.round(time) % 20 === 0) updateChunks();
 
-            // Outline
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             const intersects = raycaster.intersectObjects(blocks, false);
             if (intersects.length > 0 && intersects[0].distance < 6) {
