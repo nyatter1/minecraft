@@ -1,21 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft Infinite Baseplate - Hotbar</title>
+    <title>Minecraft Infinite Baseplate - Connected Hotbar</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
         
-        /* Hotbar Container */
+        /* Connected Hotbar Container */
         #hotbar {
             position: absolute;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            display: flex;
-            gap: 2px;
-            padding: 4px;
-            background: rgba(0, 0, 0, 0.2);
+            display: flex; /* Connects them horizontally */
+            line-height: 0; /* Removes any tiny vertical gaps */
         }
 
         /* Individual Slots */
@@ -23,18 +21,22 @@
             width: 50px;
             height: 50px;
             background-image: url('slot.jpg');
-            background-size: cover;
-            image-rendering: pixelated; /* Keeps the slot crisp */
-            border: 2px solid transparent;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            background-size: 100% 100%;
+            image-rendering: pixelated;
+            position: relative;
         }
 
-        /* Selected Slot Highlight */
-        .slot.active {
-            border: 4px solid white;
-            box-shadow: inset 0 0 10px rgba(255,255,255,0.5);
+        /* Selected Slot Overlay (Instead of a border) */
+        .slot.active::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border: 4px solid white; /* Minecraft-style selection box */
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.2); /* Subtle tint */
         }
     </style>
 </head>
@@ -67,7 +69,6 @@
     sun.position.set(20, 50, 10);
     scene.add(sun);
 
-    // --- Texture Loading ---
     const loader = new THREE.TextureLoader();
     const load = (file) => {
         const t = loader.load(file);
@@ -82,7 +83,6 @@
     const woodTop = load('woodtop.jpg');
     const leafTex = load('leaf.jpg');
 
-    // --- Materials ---
     const grassMats = [
         new THREE.MeshStandardMaterial({ map: grassSide }),
         new THREE.MeshStandardMaterial({ map: grassSide }),
@@ -103,14 +103,12 @@
 
     const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, transparent: true, alphaTest: 0.5 });
 
-    // --- Baseplate ---
     grassTop.wrapS = grassTop.wrapT = THREE.RepeatWrapping;
     grassTop.repeat.set(1000, 1000);
     const baseplate = new THREE.Mesh(new THREE.BoxGeometry(1000, 2, 1000), grassMats);
     baseplate.position.y = -1;
     scene.add(baseplate);
 
-    // --- Tree Generation ---
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
     function createTree(x, z) {
         const trunkHeight = 4 + Math.floor(Math.random() * 2);
@@ -144,21 +142,18 @@
         }
     }
 
-    // --- Controls & UI Logic ---
     const controls = new PointerLockControls(camera, document.body);
     document.addEventListener('click', () => controls.lock());
 
     let velocity = new THREE.Vector3();
     let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
     let canJump = false;
-    let selectedSlot = 1;
 
     camera.position.set(0, 5, 10);
 
     const updateHotbar = (slotNum) => {
         document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
         document.getElementById('slot' + slotNum).classList.add('active');
-        selectedSlot = slotNum;
     };
 
     const onKeyDown = (e) => {
@@ -187,7 +182,6 @@
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
 
-    // --- Game Loop ---
     let prevTime = performance.now();
     function animate() {
         requestAnimationFrame(animate);
@@ -198,33 +192,26 @@
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
             velocity.y -= 24.0 * delta; 
-
             const speed = 75.0;
             if (moveForward) velocity.z -= speed * delta;
             if (moveBackward) velocity.z += speed * delta;
             if (moveLeft) velocity.x -= speed * delta;
             if (moveRight) velocity.x += speed * delta;
-
             controls.moveRight(velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
-
             if (camera.position.y < 1.62) {
-                velocity.y = 0;
-                camera.position.y = 1.62;
-                canJump = true;
+                velocity.y = 0; camera.position.y = 1.62; canJump = true;
             }
         }
         renderer.render(scene, camera);
         prevTime = time;
     }
-
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
-
     animate();
 </script>
 </body>
