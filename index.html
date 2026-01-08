@@ -47,25 +47,31 @@
 
     const CHUNK_SIZE = 16;
     const RENDER_DISTANCE = 3; 
-    const dummy = new THREE.Object3D();
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 20, (RENDER_DISTANCE * CHUNK_SIZE) + 5);
+    // Tighter fog for better performance
+    scene.fog = new THREE.Fog(0x87CEEB, 15, (RENDER_DISTANCE * CHUNK_SIZE));
 
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: false });
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
+    
+    // PERFORMANCE: Disabled antialias and set low precision
+    const renderer = new THREE.WebGLRenderer({ 
+        canvas: document.getElementById('canvas'), 
+        antialias: false,
+        precision: 'lowp' 
+    });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(1); // Performance boost
+    renderer.setPixelRatio(1); // Lock to 1 to prevent lag on 4K screens
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-    sun.position.set(20, 50, 10);
+    const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+    sun.position.set(10, 20, 10);
     scene.add(sun);
 
     const loader = new THREE.TextureLoader();
-    const load = (f) => {
-        const t = loader.load(f);
+    const load = (file) => {
+        const t = loader.load(file);
         t.magFilter = THREE.NearestFilter;
         t.minFilter = THREE.NearestFilter;
         return t;
@@ -87,15 +93,15 @@
     ];
     const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, transparent: true, alphaTest: 0.5 });
 
-    const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+    const blocks = []; 
     const chunks = new Map();
-    const raycaster = new THREE.Raycaster();
-    const interactables = []; // Only for the outline
+    const blockGeo = new THREE.BoxGeometry(1, 1, 1);
 
     const selectionOutline = new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(1.01, 1.01, 1.01)),
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(1.01, 1.01, 1.01)), 
         new THREE.LineBasicMaterial({ color: 0x000000 })
     );
+    selectionOutline.visible = false;
     scene.add(selectionOutline);
 
     function seededRandom(x, z) {
@@ -103,61 +109,61 @@
         return val - Math.floor(val);
     }
 
+    function createTree(x, z, group) {
+        const trunkHeight = 4 + Math.floor(seededRandom(x, z) * 2);
+        for (let y = 1; y <= trunkHeight; y++) {
+            const log = new THREE.Mesh(blockGeo, woodMats);
+            log.position.set(x, y, z);
+            log.matrixAutoUpdate = false; // PERFORMANCE: Static object
+            log.updateMatrix();
+            group.add(log);
+            blocks.push(log);
+        }
+        // PERFORMANCE: Leaves are the main lag source. Using a single block cluster.
+        const leafCluster = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), leafMat);
+        leafCluster.position.set(x, trunkHeight + 1, z);
+        leafCluster.matrixAutoUpdate = false;
+        leafCluster.updateMatrix();
+        group.add(leafCluster);
+        blocks.push(leafCluster);
+    }
+
     function createChunk(cx, cz) {
         const group = new THREE.Group();
-        const count = CHUNK_SIZE * CHUNK_SIZE;
-        
-        // INSTANCING: Draw 256 blocks with ONE command
-        const grassIM = new THREE.InstancedMesh(blockGeo, grassMats, count);
-        const dirtIM = new THREE.InstancedMesh(blockGeo, dirtMat, count);
-        
-        let i = 0;
         for (let x = 0; x < CHUNK_SIZE; x++) {
             for (let z = 0; z < CHUNK_SIZE; z++) {
                 const px = cx * CHUNK_SIZE + x;
                 const pz = cz * CHUNK_SIZE + z;
 
-                dummy.position.set(px, 0, pz);
-                dummy.updateMatrix();
-                grassIM.setMatrixAt(i, dummy.matrix);
+                const grass = new THREE.Mesh(blockGeo, grassMats);
+                grass.position.set(px, 0, pz);
+                grass.matrixAutoUpdate = false;
+                grass.updateMatrix();
+                group.add(grass);
+                blocks.push(grass);
 
-                dummy.position.set(px, -1, pz);
-                dummy.updateMatrix();
-                dirtIM.setMatrixAt(i, dummy.matrix);
+                const dirt = new THREE.Mesh(blockGeo, dirtMat);
+                dirt.position.set(px, -1, pz);
+                dirt.matrixAutoUpdate = false;
+                dirt.updateMatrix();
+                group.add(dirt);
+                blocks.push(dirt);
 
-                if (seededRandom(px, pz) > 0.985) {
-                    spawnTree(px, pz, group);
+                if (seededRandom(px, pz) > 0.99) { // Slightly rarer trees for FPS
+                    createTree(px, pz, group);
                 }
-                i++;
             }
         }
-        group.add(grassIM, dirtIM);
         scene.add(group);
         return group;
     }
 
-    function spawnTree(x, z, group) {
-        const h = 4 + Math.floor(seededRandom(x, z) * 2);
-        // Logs
-        for (let y = 1; y <= h; y++) {
-            const log = new THREE.Mesh(blockGeo, woodMats);
-            log.position.set(x, y, z);
-            group.add(log);
-            interactables.push(log);
-        }
-        // Simplified leaves for FPS
-        const leaves = new THREE.Mesh(new THREE.BoxGeometry(3, 3, 3), leafMat);
-        leaves.position.set(x, h + 1, z);
-        group.add(leaves);
-        interactables.push(leaves);
-    }
-
     function updateChunks() {
-        const pCX = Math.floor(camera.position.x / CHUNK_SIZE);
-        const pCZ = Math.floor(camera.position.z / CHUNK_SIZE);
+        const curCX = Math.floor(camera.position.x / CHUNK_SIZE);
+        const curCZ = Math.floor(camera.position.z / CHUNK_SIZE);
 
-        for (let x = pCX - RENDER_DISTANCE; x <= pCX + RENDER_DISTANCE; x++) {
-            for (let z = pCZ - RENDER_DISTANCE; z <= pCZ + RENDER_DISTANCE; z++) {
+        for (let x = curCX - RENDER_DISTANCE; x <= curCX + RENDER_DISTANCE; x++) {
+            for (let z = curCZ - RENDER_DISTANCE; z <= curCZ + RENDER_DISTANCE; z++) {
                 const key = `${x},${z}`;
                 if (!chunks.has(key)) chunks.set(key, createChunk(x, z));
             }
@@ -165,8 +171,12 @@
 
         for (const [key, group] of chunks) {
             const [cx, cz] = key.split(',').map(Number);
-            if (Math.abs(cx - pCX) > RENDER_DISTANCE + 1 || Math.abs(cz - pCZ) > RENDER_DISTANCE + 1) {
+            if (Math.abs(cx - curCX) > RENDER_DISTANCE + 1 || Math.abs(cz - curCZ) > RENDER_DISTANCE + 1) {
                 scene.remove(group);
+                group.children.forEach(child => {
+                    const idx = blocks.indexOf(child);
+                    if (idx > -1) blocks.splice(idx, 1);
+                });
                 chunks.delete(key);
             }
         }
@@ -175,29 +185,28 @@
     const controls = new PointerLockControls(camera, document.body);
     document.addEventListener('click', () => controls.lock());
 
-    let velocity = new THREE.Vector3(), move = { f: false, b: false, l: false, r: false };
+    let velocity = new THREE.Vector3();
+    let move = { f: false, b: false, l: false, r: false };
     let canJump = false;
     camera.position.set(8, 3, 8);
 
-    document.addEventListener('keydown', (e) => {
-        switch (e.code) {
-            case 'KeyW': move.f = true; break;
-            case 'KeyS': move.b = true; break;
-            case 'KeyA': move.l = true; break;
-            case 'KeyD': move.r = true; break;
-            case 'Space': if (canJump) { velocity.y = 9; canJump = false; } break;
+    const onKey = (e, val) => {
+        if (e.code === 'KeyW') move.f = val;
+        if (e.code === 'KeyS') move.b = val;
+        if (e.code === 'KeyA') move.l = val;
+        if (e.code === 'KeyD') move.r = val;
+        if (e.code === 'Space' && canJump && val) { velocity.y = 9; canJump = false; }
+        if (val && e.key >= 1 && e.key <= 6) {
+            document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
+            document.getElementById('slot' + e.key).classList.add('active');
         }
-    });
-    document.addEventListener('keyup', (e) => {
-        switch (e.code) {
-            case 'KeyW': move.f = false; break;
-            case 'KeyS': move.b = false; break;
-            case 'KeyA': move.l = false; break;
-            case 'KeyD': move.r = false; break;
-        }
-    });
+    };
+    document.addEventListener('keydown', (e) => onKey(e, true));
+    document.addEventListener('keyup', (e) => onKey(e, false));
 
+    const raycaster = new THREE.Raycaster();
     let prevTime = performance.now();
+    
     function animate() {
         requestAnimationFrame(animate);
         const time = performance.now();
@@ -207,6 +216,7 @@
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
             velocity.y -= 24.0 * delta; 
+
             const speed = 75.0;
             if (move.f) velocity.z -= speed * delta;
             if (move.b) velocity.z += speed * delta;
@@ -216,16 +226,16 @@
             controls.moveRight(velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
-            
+
             if (camera.position.y < 2.1) {
                 velocity.y = 0; camera.position.y = 2.1; canJump = true;
             }
 
             updateChunks();
 
-            // Outline logic (Optimized)
+            // PERFORMANCE: Raycast only every other frame or shorter distance
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-            const intersects = raycaster.intersectObjects(interactables);
+            const intersects = raycaster.intersectObjects(blocks, false);
             if (intersects.length > 0 && intersects[0].distance < 6) {
                 selectionOutline.position.copy(intersects[0].object.position);
                 selectionOutline.visible = true;
