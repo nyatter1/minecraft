@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft Infinite Baseplate - Connected Hotbar</title>
+    <title>Minecraft Infinite Baseplate - Textured Selection</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
@@ -12,8 +12,8 @@
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            display: flex; /* Connects them horizontally */
-            line-height: 0; /* Removes any tiny vertical gaps */
+            display: flex; 
+            line-height: 0; 
         }
 
         /* Individual Slots */
@@ -26,17 +26,21 @@
             position: relative;
         }
 
-        /* Selected Slot Overlay (Instead of a border) */
+        /* Selected Slot Outline using outline.jpg */
         .slot.active::after {
             content: "";
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            border: 4px solid white; /* Minecraft-style selection box */
-            box-sizing: border-box;
-            background: rgba(255, 255, 255, 0.2); /* Subtle tint */
+            /* Negative margin makes the outline sit slightly outside the slot, 
+               common in Minecraft's UI style */
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background-image: url('outline.png');
+            background-size: 100% 100%;
+            image-rendering: pixelated;
+            z-index: 10;
+            pointer-events: none;
         }
     </style>
 </head>
@@ -153,7 +157,8 @@
 
     const updateHotbar = (slotNum) => {
         document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
-        document.getElementById('slot' + slotNum).classList.add('active');
+        const target = document.getElementById('slot' + slotNum);
+        if(target) target.classList.add('active');
     };
 
     const onKeyDown = (e) => {
