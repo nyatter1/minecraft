@@ -1,14 +1,54 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Infinite Baseplate - Minecraft Trees</title>
+    <title>Minecraft Infinite Baseplate - Hotbar</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #87CEEB; }
+        body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
+        
+        /* Hotbar Container */
+        #hotbar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 2px;
+            padding: 4px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        /* Individual Slots */
+        .slot {
+            width: 50px;
+            height: 50px;
+            background-image: url('slot.jpg');
+            background-size: cover;
+            image-rendering: pixelated; /* Keeps the slot crisp */
+            border: 2px solid transparent;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Selected Slot Highlight */
+        .slot.active {
+            border: 4px solid white;
+            box-shadow: inset 0 0 10px rgba(255,255,255,0.5);
+        }
     </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
+    <div id="hotbar">
+        <div class="slot active" id="slot1"></div>
+        <div class="slot" id="slot2"></div>
+        <div class="slot" id="slot3"></div>
+        <div class="slot" id="slot4"></div>
+        <div class="slot" id="slot5"></div>
+        <div class="slot" id="slot6"></div>
+    </div>
+
+    <canvas id="canvas"></canvas>
 
 <script type="module">
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
@@ -70,28 +110,21 @@
     baseplate.position.y = -1;
     scene.add(baseplate);
 
-    // --- Tree Generation Logic ---
+    // --- Tree Generation ---
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
-
     function createTree(x, z) {
         const trunkHeight = 4 + Math.floor(Math.random() * 2);
-        
-        // Build Trunk
         for (let y = 0; y < trunkHeight; y++) {
             const log = new THREE.Mesh(blockGeo, woodMats);
             log.position.set(x, y + 0.5, z);
             scene.add(log);
         }
-
-        // Build Leaves (Simple Minecraft shape)
         for (let ly = -2; ly <= 2; ly++) {
             let radius = (ly > 0) ? 1 : 2;
             for (let lx = -radius; lx <= radius; lx++) {
                 for (let lz = -radius; lz <= radius; lz++) {
-                    // Don't place leaves where the trunk is or at corners for top layer
                     if (ly === 2 && (Math.abs(lx) + Math.abs(lz) > 1)) continue;
                     if (lx === 0 && lz === 0 && ly < 0) continue;
-
                     const leaf = new THREE.Mesh(blockGeo, leafMat);
                     leaf.position.set(x + lx, trunkHeight + ly + 0.5, z + lz);
                     scene.add(leaf);
@@ -100,28 +133,33 @@
         }
     }
 
-    // --- Grid Spawning (Prevents spawning next to each other) ---
-    const spacing = 12; // Minimum meters between trees
-    for (let x = -60; x <= 60; x += spacing) {
-        for (let z = -60; z <= 60; z += spacing) {
-            if (Math.random() > 0.4) { // 60% chance to spawn a tree in this grid cell
-                // Add slight randomness within the grid cell
-                const offsetX = (Math.random() - 0.5) * 4;
-                const offsetZ = (Math.random() - 0.5) * 4;
+    const spacing = 15;
+    for (let x = -75; x <= 75; x += spacing) {
+        for (let z = -75; z <= 75; z += spacing) {
+            if (Math.random() > 0.3) {
+                const offsetX = (Math.random() - 0.5) * 6;
+                const offsetZ = (Math.random() - 0.5) * 6;
                 createTree(Math.floor(x + offsetX), Math.floor(z + offsetZ));
             }
         }
     }
 
-    // --- Movement & Physics ---
+    // --- Controls & UI Logic ---
     const controls = new PointerLockControls(camera, document.body);
     document.addEventListener('click', () => controls.lock());
 
     let velocity = new THREE.Vector3();
     let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
     let canJump = false;
+    let selectedSlot = 1;
 
     camera.position.set(0, 5, 10);
+
+    const updateHotbar = (slotNum) => {
+        document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
+        document.getElementById('slot' + slotNum).classList.add('active');
+        selectedSlot = slotNum;
+    };
 
     const onKeyDown = (e) => {
         switch (e.code) {
@@ -129,6 +167,12 @@
             case 'KeyA': moveLeft = true; break;
             case 'KeyS': moveBackward = true; break;
             case 'KeyD': moveRight = true; break;
+            case 'Digit1': updateHotbar(1); break;
+            case 'Digit2': updateHotbar(2); break;
+            case 'Digit3': updateHotbar(3); break;
+            case 'Digit4': updateHotbar(4); break;
+            case 'Digit5': updateHotbar(5); break;
+            case 'Digit6': updateHotbar(6); break;
             case 'Space': if (canJump) { velocity.y = 9; canJump = false; } break;
         }
     };
@@ -143,6 +187,7 @@
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
 
+    // --- Game Loop ---
     let prevTime = performance.now();
     function animate() {
         requestAnimationFrame(animate);
@@ -154,7 +199,7 @@
             velocity.z -= velocity.z * 10.0 * delta;
             velocity.y -= 24.0 * delta; 
 
-            const speed = 70.0;
+            const speed = 75.0;
             if (moveForward) velocity.z -= speed * delta;
             if (moveBackward) velocity.z += speed * delta;
             if (moveLeft) velocity.x -= speed * delta;
