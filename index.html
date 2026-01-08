@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft Scale Baseplate</title>
+    <title>Infinite Baseplate - Minecraft Trees</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; }
         canvas { display: block; width: 100vw; height: 100vh; }
@@ -14,37 +14,36 @@
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
     import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
-    // --- Scene Setup ---
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 5, 100); // Tighter fog for smaller scale
+    scene.fog = new THREE.Fog(0x87CEEB, 10, 150);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.6);
-    sun.position.set(10, 20, 10);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(20, 50, 10);
     scene.add(sun);
 
     // --- Texture Loading ---
     const loader = new THREE.TextureLoader();
-    const grassTop = loader.load('grass-top.jpg');
-    const grassSide = loader.load('grass-side.jpg');
-    const woodSide = loader.load('wood.jpg');
-    const woodTop = loader.load('woodtop.jpg');
+    const load = (file) => {
+        const t = loader.load(file);
+        t.magFilter = THREE.NearestFilter;
+        t.minFilter = THREE.NearestFilter;
+        return t;
+    };
 
-    [grassTop, grassSide, woodSide, woodTop].forEach(tex => {
-        tex.magFilter = THREE.NearestFilter;
-        tex.minFilter = THREE.NearestFilter;
-    });
+    const grassTop = load('grass-top.jpg');
+    const grassSide = load('grass-side.jpg');
+    const woodSide = load('wood.jpg');
+    const woodTop = load('woodtop.jpg');
+    const leafTex = load('leaf.jpg');
 
-    // --- Baseplate (1000x1000 meters) ---
-    grassTop.wrapS = grassTop.wrapT = THREE.RepeatWrapping;
-    grassTop.repeat.set(1000, 1000); // 1 tile per meter
-    
-    const grassMaterials = [
+    // --- Materials ---
+    const grassMats = [
         new THREE.MeshStandardMaterial({ map: grassSide }),
         new THREE.MeshStandardMaterial({ map: grassSide }),
         new THREE.MeshStandardMaterial({ map: grassTop }),
@@ -52,13 +51,8 @@
         new THREE.MeshStandardMaterial({ map: grassSide }),
         new THREE.MeshStandardMaterial({ map: grassSide })
     ];
-    // Flat baseplate
-    const baseplate = new THREE.Mesh(new THREE.BoxGeometry(1000, 2, 1000), grassMaterials);
-    baseplate.position.y = -1; // Surface at y=0
-    scene.add(baseplate);
 
-    // --- Wooden Blocks (1x1x1 meters) ---
-    const woodMaterials = [
+    const woodMats = [
         new THREE.MeshStandardMaterial({ map: woodSide }), 
         new THREE.MeshStandardMaterial({ map: woodSide }), 
         new THREE.MeshStandardMaterial({ map: woodTop }),  
@@ -67,17 +61,59 @@
         new THREE.MeshStandardMaterial({ map: woodSide })
     ];
 
+    const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, transparent: true, alphaTest: 0.5 });
+
+    // --- Baseplate ---
+    grassTop.wrapS = grassTop.wrapT = THREE.RepeatWrapping;
+    grassTop.repeat.set(1000, 1000);
+    const baseplate = new THREE.Mesh(new THREE.BoxGeometry(1000, 2, 1000), grassMats);
+    baseplate.position.y = -1;
+    scene.add(baseplate);
+
+    // --- Tree Generation Logic ---
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
-    for(let i = 0; i < 100; i++) {
-        const block = new THREE.Mesh(blockGeo, woodMaterials);
-        // Randomly scatter within 50 meters of center
-        block.position.x = Math.floor((Math.random() - 0.5) * 60);
-        block.position.z = Math.floor((Math.random() - 0.5) * 60);
-        block.position.y = 0.5; // Half of 1m height
-        scene.add(block);
+
+    function createTree(x, z) {
+        const trunkHeight = 4 + Math.floor(Math.random() * 2);
+        
+        // Build Trunk
+        for (let y = 0; y < trunkHeight; y++) {
+            const log = new THREE.Mesh(blockGeo, woodMats);
+            log.position.set(x, y + 0.5, z);
+            scene.add(log);
+        }
+
+        // Build Leaves (Simple Minecraft shape)
+        for (let ly = -2; ly <= 2; ly++) {
+            let radius = (ly > 0) ? 1 : 2;
+            for (let lx = -radius; lx <= radius; lx++) {
+                for (let lz = -radius; lz <= radius; lz++) {
+                    // Don't place leaves where the trunk is or at corners for top layer
+                    if (ly === 2 && (Math.abs(lx) + Math.abs(lz) > 1)) continue;
+                    if (lx === 0 && lz === 0 && ly < 0) continue;
+
+                    const leaf = new THREE.Mesh(blockGeo, leafMat);
+                    leaf.position.set(x + lx, trunkHeight + ly + 0.5, z + lz);
+                    scene.add(leaf);
+                }
+            }
+        }
     }
 
-    // --- Movement Logic ---
+    // --- Grid Spawning (Prevents spawning next to each other) ---
+    const spacing = 12; // Minimum meters between trees
+    for (let x = -60; x <= 60; x += spacing) {
+        for (let z = -60; z <= 60; z += spacing) {
+            if (Math.random() > 0.4) { // 60% chance to spawn a tree in this grid cell
+                // Add slight randomness within the grid cell
+                const offsetX = (Math.random() - 0.5) * 4;
+                const offsetZ = (Math.random() - 0.5) * 4;
+                createTree(Math.floor(x + offsetX), Math.floor(z + offsetZ));
+            }
+        }
+    }
+
+    // --- Movement & Physics ---
     const controls = new PointerLockControls(camera, document.body);
     document.addEventListener('click', () => controls.lock());
 
@@ -85,8 +121,7 @@
     let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
     let canJump = false;
 
-    // Start in the air
-    camera.position.set(0, 10, 5); 
+    camera.position.set(0, 5, 10);
 
     const onKeyDown = (e) => {
         switch (e.code) {
@@ -94,7 +129,7 @@
             case 'KeyA': moveLeft = true; break;
             case 'KeyS': moveBackward = true; break;
             case 'KeyD': moveRight = true; break;
-            case 'Space': if (canJump) { velocity.y = 10; canJump = false; } break;
+            case 'Space': if (canJump) { velocity.y = 9; canJump = false; } break;
         }
     };
     const onKeyUp = (e) => {
@@ -108,7 +143,6 @@
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
 
-    // --- Game Loop ---
     let prevTime = performance.now();
     function animate() {
         requestAnimationFrame(animate);
@@ -116,25 +150,20 @@
         const delta = Math.min((time - prevTime) / 1000, 0.1);
 
         if (controls.isLocked) {
-            // Friction/Damping
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
-            velocity.y -= 25.0 * delta; // Gravity
+            velocity.y -= 24.0 * delta; 
 
-            const speed = 80.0;
+            const speed = 70.0;
             if (moveForward) velocity.z -= speed * delta;
             if (moveBackward) velocity.z += speed * delta;
-            
-            // Fixed Left/Right Inversion here:
             if (moveLeft) velocity.x -= speed * delta;
             if (moveRight) velocity.x += speed * delta;
 
-            // Apply movement
             controls.moveRight(velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
 
-            // Ground Collision (1.62m is Minecraft eye level)
             if (camera.position.y < 1.62) {
                 velocity.y = 0;
                 camera.position.y = 1.62;
