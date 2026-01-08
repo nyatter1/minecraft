@@ -1,12 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft - Block Selection Outline</title>
+    <title>Minecraft - Block-Based World</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; }
         
-        /* Crosshair */
         #crosshair {
             position: absolute;
             top: 50%;
@@ -26,7 +25,6 @@
         #crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
         #crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
 
-        /* Connected Hotbar Container */
         #hotbar {
             position: absolute;
             bottom: 20px;
@@ -76,7 +74,7 @@
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 10, 150);
+    scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
@@ -98,18 +96,22 @@
     // Textures
     const grassTop = load('grass-top.jpg');
     const grassSide = load('grass-side.jpg');
+    const dirtTex = load('bottom.jpg');
     const woodSide = load('wood.jpg');
     const woodTop = load('woodtop.jpg');
     const leafTex = load('leaf.jpg');
 
+    // Materials
     const grassMats = [
-        new THREE.MeshStandardMaterial({ map: grassSide }),
-        new THREE.MeshStandardMaterial({ map: grassSide }),
-        new THREE.MeshStandardMaterial({ map: grassTop }),
-        new THREE.MeshStandardMaterial({ map: grassSide }),
-        new THREE.MeshStandardMaterial({ map: grassSide }),
-        new THREE.MeshStandardMaterial({ map: grassSide })
+        new THREE.MeshStandardMaterial({ map: grassSide }), // +X
+        new THREE.MeshStandardMaterial({ map: grassSide }), // -X
+        new THREE.MeshStandardMaterial({ map: grassTop }),  // +Y (Top)
+        new THREE.MeshStandardMaterial({ map: dirtTex }),   // -Y (Bottom)
+        new THREE.MeshStandardMaterial({ map: grassSide }), // +Z
+        new THREE.MeshStandardMaterial({ map: grassSide })  // -Z
     ];
+
+    const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex });
 
     const woodMats = [
         new THREE.MeshStandardMaterial({ map: woodSide }), 
@@ -124,31 +126,41 @@
 
     // Interaction Setup
     const raycaster = new THREE.Raycaster();
-    const blocks = []; // Array to keep track of all blocks for raycasting
+    const blocks = []; 
 
-    // Selection Outline (Black box around blocks)
-    const outlineGeo = new THREE.BoxGeometry(1.005, 1.005, 1.005);
+    // Selection Outline
+    const outlineGeo = new THREE.BoxGeometry(1.01, 1.01, 1.01);
     const outlineEdges = new THREE.EdgesGeometry(outlineGeo);
     const outlineMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
     const selectionOutline = new THREE.LineSegments(outlineEdges, outlineMat);
     selectionOutline.visible = false;
     scene.add(selectionOutline);
 
-    // Baseplate (Infinite looking floor)
-    grassTop.wrapS = grassTop.wrapT = THREE.RepeatWrapping;
-    grassTop.repeat.set(1000, 1000);
-    const baseplate = new THREE.Mesh(new THREE.BoxGeometry(1000, 2, 1000), grassMats);
-    baseplate.position.y = -1;
-    scene.add(baseplate);
-    // We don't add the floor to 'blocks' usually, 
-    // but you can if you want an outline on the floor too.
-
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
+
+    // World Generation: Baseplate (Two Layers)
+    const worldSize = 30; // Reduced for performance, can be increased
+    for (let x = -worldSize; x <= worldSize; x++) {
+        for (let z = -worldSize; z <= worldSize; z++) {
+            // Layer 1: Grass
+            const grassBlock = new THREE.Mesh(blockGeo, grassMats);
+            grassBlock.position.set(x, 0, z);
+            scene.add(grassBlock);
+            blocks.push(grassBlock);
+
+            // Layer 2: Dirt
+            const dirtBlock = new THREE.Mesh(blockGeo, dirtMat);
+            dirtBlock.position.set(x, -1, z);
+            scene.add(dirtBlock);
+            blocks.push(dirtBlock);
+        }
+    }
+
     function createTree(x, z) {
         const trunkHeight = 4 + Math.floor(Math.random() * 2);
-        for (let y = 0; y < trunkHeight; y++) {
+        for (let y = 1; y <= trunkHeight; y++) {
             const log = new THREE.Mesh(blockGeo, woodMats);
-            log.position.set(x, y + 0.5, z);
+            log.position.set(x, y, z);
             scene.add(log);
             blocks.push(log);
         }
@@ -159,7 +171,7 @@
                     if (ly === 2 && (Math.abs(lx) + Math.abs(lz) > 1)) continue;
                     if (lx === 0 && lz === 0 && ly < 0) continue;
                     const leaf = new THREE.Mesh(blockGeo, leafMat);
-                    leaf.position.set(x + lx, trunkHeight + ly + 0.5, z + lz);
+                    leaf.position.set(x + lx, trunkHeight + ly, z + lz);
                     scene.add(leaf);
                     blocks.push(leaf);
                 }
@@ -167,15 +179,11 @@
         }
     }
 
-    const spacing = 15;
-    for (let x = -75; x <= 75; x += spacing) {
-        for (let z = -75; z <= 75; z += spacing) {
-            if (Math.random() > 0.3) {
-                const offsetX = (Math.random() - 0.5) * 6;
-                const offsetZ = (Math.random() - 0.5) * 6;
-                createTree(Math.floor(x + offsetX), Math.floor(z + offsetZ));
-            }
-        }
+    // Scatter trees
+    for (let i = 0; i < 15; i++) {
+        const tx = Math.floor(Math.random() * worldSize * 2) - worldSize;
+        const tz = Math.floor(Math.random() * worldSize * 2) - worldSize;
+        createTree(tx, tz);
     }
 
     const controls = new PointerLockControls(camera, document.body);
@@ -185,7 +193,7 @@
     let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
     let canJump = false;
 
-    camera.position.set(0, 5, 10);
+    camera.position.set(0, 3, 10);
 
     const updateHotbar = (slotNum) => {
         document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
@@ -226,7 +234,6 @@
         const delta = Math.min((time - prevTime) / 1000, 0.1);
 
         if (controls.isLocked) {
-            // Movement Physics
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
             velocity.y -= 24.0 * delta; 
@@ -238,15 +245,17 @@
             controls.moveRight(velocity.x * delta);
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
-            if (camera.position.y < 1.62) {
-                velocity.y = 0; camera.position.y = 1.62; canJump = true;
+            
+            // Simple Floor Collision
+            if (camera.position.y < 2.1) {
+                velocity.y = 0; camera.position.y = 2.1; canJump = true;
             }
 
-            // --- Raycasting for block outline ---
+            // Raycasting for outline
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             const intersects = raycaster.intersectObjects(blocks);
 
-            if (intersects.length > 0 && intersects[0].distance < 5) {
+            if (intersects.length > 0 && intersects[0].distance < 6) {
                 const target = intersects[0].object;
                 selectionOutline.position.copy(target.position);
                 selectionOutline.visible = true;
