@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Minecraft - Infinite World</title>
+    <title>Minecraft - 100 Layers</title>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; width: 100vw; height: 100vh; }
         canvas { display: block; width: 100%; height: 100%; }
@@ -22,37 +22,44 @@
         }
 
         .slot {
-            width: 50px; height: 50px; 
-            background-image: url('slot.jpg');
-            background-size: 100% 100%; 
-            image-rendering: pixelated; 
-            position: relative;
+            width: 50px; height: 50px; background-image: url('slot.jpg');
+            background-size: 100% 100%; image-rendering: pixelated; position: relative;
         }
 
         .slot.active::after {
-            content: ""; position: absolute; 
-            top: -2px; left: -2px; right: -2px; bottom: -2px;
-            background-image: url('outline.jpg'); 
-            background-size: 100% 100%;
+            content: ""; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
+            background-image: url('outline.jpg'); background-size: 100% 100%;
             image-rendering: pixelated; z-index: 10; pointer-events: none;
         }
 
         .item-icon {
-            width: 32px; height: 32px;
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            background-size: cover; image-rendering: pixelated;
+            width: 32px; height: 32px; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); background-size: cover; image-rendering: pixelated;
         }
 
         .count {
             position: absolute; bottom: 4px; right: 4px; color: white;
             font-size: 14px; text-shadow: 2px 2px 0px #000; font-weight: bold;
-            pointer-events: none;
         }
+
+        /* The Steve Hand Sprite */
+        #hand-container {
+            position: absolute; bottom: 0; right: 10%; width: 300px; height: 300px;
+            pointer-events: none; z-index: 25; overflow: hidden;
+        }
+        #steve-hand {
+            width: 100%; height: 100%; background-image: url('steve-hand.png');
+            background-size: contain; background-repeat: no-repeat; background-position: bottom right;
+            image-rendering: pixelated; transform-origin: bottom right;
+            transition: transform 0.1s;
+        }
+        .swing { transform: rotate(-20deg) translateY(20px) translateX(-20px); }
     </style>
 </head>
 <body>
     <div id="crosshair"></div>
+    <div id="hand-container"><div id="steve-hand"></div></div>
+    
     <div id="hotbar">
         <div class="slot active" id="slot0"><div class="item-icon"></div><span class="count"></span></div>
         <div class="slot" id="slot1"><div class="item-icon"></div><span class="count"></span></div>
@@ -68,9 +75,8 @@
     import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
     import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
 
-    // --- CONFIG ---
-    const CHUNK_SIZE = 12; // Reduced slightly for depth performance
-    const RENDER_DISTANCE = 2; 
+    const CHUNK_SIZE = 8; // Smaller chunks for 100-layer depth stability
+    const RENDER_DISTANCE = 3; 
     let selectedSlot = 0;
 
     const scene = new THREE.Scene();
@@ -79,7 +85,7 @@
     const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: false });
     renderer.setSize(window.innerWidth, window.innerHeight);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const sun = new THREE.DirectionalLight(0xffffff, 0.8);
     sun.position.set(20, 50, 10);
     scene.add(sun);
@@ -87,52 +93,36 @@
     const loader = new THREE.TextureLoader();
     const load = (f) => { let t = loader.load(f); t.magFilter = t.minFilter = THREE.NearestFilter; return t; };
 
-    // Materials
     const textures = {
         grass: { top: load('grass-top.jpg'), side: load('grass-side.jpg'), bottom: load('bottom.jpg'), icon: 'grass-side.jpg' },
         dirt: { all: load('bottom.jpg'), icon: 'bottom.jpg' },
-        stone: { all: load('stone.jpg'), icon: 'stone.jpg' }, // Ensure stone.jpg exists
+        stone: { all: load('stone.jpg'), icon: 'stone.jpg' },
+        deepslate: { all: load('stone.jpg'), icon: 'stone.jpg' }, // Swap with deepslate.jpg if available
+        bedrock: { all: load('stone.jpg'), icon: 'stone.jpg' },
         wood: { side: load('wood.jpg'), top: load('woodtop.jpg'), icon: 'wood.jpg' },
-        leaf: { all: load('leaf.jpg'), icon: 'leaf.jpg' },
-        hand: load('minecraft hand.png')
+        leaf: { all: load('leaf.jpg'), icon: 'leaf.jpg' }
     };
 
     const mats = {
         grass: [new THREE.MeshStandardMaterial({map: textures.grass.side}), new THREE.MeshStandardMaterial({map: textures.grass.side}), new THREE.MeshStandardMaterial({map: textures.grass.top}), new THREE.MeshStandardMaterial({map: textures.grass.bottom}), new THREE.MeshStandardMaterial({map: textures.grass.side}), new THREE.MeshStandardMaterial({map: textures.grass.side})],
         dirt: new THREE.MeshStandardMaterial({map: textures.dirt.all}),
         stone: new THREE.MeshStandardMaterial({map: textures.stone.all}),
+        deepslate: new THREE.MeshStandardMaterial({map: textures.deepslate.all, color: 0x444444}),
+        bedrock: new THREE.MeshStandardMaterial({map: textures.bedrock.all, color: 0x111111}),
         wood: [new THREE.MeshStandardMaterial({map: textures.wood.side}), new THREE.MeshStandardMaterial({map: textures.wood.side}), new THREE.MeshStandardMaterial({map: textures.wood.top}), new THREE.MeshStandardMaterial({map: textures.wood.top}), new THREE.MeshStandardMaterial({map: textures.wood.side}), new THREE.MeshStandardMaterial({map: textures.wood.side})],
         leaf: new THREE.MeshStandardMaterial({map: textures.leaf.all, transparent: true, alphaTest: 0.5})
     };
 
-    // --- HAND / ARM ---
-    const handGroup = new THREE.Group();
-    const handGeo = new THREE.BoxGeometry(0.18, 0.18, 0.6);
-    // Apply texture to all sides but keep the "front" (fist) looking skin-toned
-    const handMats = Array(6).fill(new THREE.MeshStandardMaterial({ map: textures.hand }));
-    handMats[4] = new THREE.MeshStandardMaterial({ color: 0xe0ac69 }); // "Fist" end
-    
-    const handMesh = new THREE.Mesh(handGeo, handMats);
-    handMesh.position.set(0.4, -0.3, -0.4);
-    handMesh.rotation.x = -0.15;
-    handMesh.rotation.y = -0.1;
-    handGroup.add(handMesh);
-    camera.add(handGroup);
-    scene.add(camera);
-
-    let isSwinging = false;
-    let swingStartTime = 0;
-
-    // --- INVENTORY ---
     const inventory = Array(6).fill(null);
     const MAX_STACK = 64;
 
     function addToInventory(type) {
+        if(type === 'bedrock') return; // Can't collect bedrock
         let slotIndex = inventory.findIndex(item => item && item.type === type && item.count < MAX_STACK);
         if (slotIndex === -1) slotIndex = inventory.findIndex(item => item === null);
         if (slotIndex !== -1) {
-            if (inventory[slotIndex]) { inventory[slotIndex].count++; } 
-            else { inventory[slotIndex] = { type: type, count: 1 }; }
+            if (inventory[slotIndex]) inventory[slotIndex].count++;
+            else inventory[slotIndex] = { type: type, count: 1 };
             updateUI();
         }
     }
@@ -152,7 +142,6 @@
         });
     }
 
-    // --- WORLD & COLLISION ---
     let blocks = []; 
     const chunks = new Map();
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
@@ -168,20 +157,6 @@
         return mesh;
     }
 
-    function createTree(x, z, group) {
-        const height = 4 + Math.floor(Math.random() * 2);
-        for (let y = 1; y <= height; y++) createBlock('wood', x, y, z, group);
-        for (let ly = -2; ly <= 2; ly++) {
-            let radius = ly > 0 ? (ly === 2 ? 0 : 1) : 2;
-            for (let lx = -radius; lx <= radius; lx++) {
-                for (let lz = -radius; lz <= radius; lz++) {
-                    if (lx === 0 && lz === 0 && ly < 1) continue;
-                    createBlock('leaf', x + lx, height + ly, z + lz, group);
-                }
-            }
-        }
-    }
-
     function createChunk(cx, cz) {
         const group = new THREE.Group();
         for (let x = 0; x < CHUNK_SIZE; x++) {
@@ -189,15 +164,11 @@
                 const px = cx * CHUNK_SIZE + x;
                 const pz = cz * CHUNK_SIZE + z;
                 
-                // LAYER SYSTEM
-                createBlock('grass', px, 0, pz, group);      // Surface
-                createBlock('dirt', px, -1, pz, group);     // Sub-surface
-                createBlock('dirt', px, -2, pz, group);
-                createBlock('stone', px, -3, pz, group);    // Deep Stone
-                createBlock('stone', px, -4, pz, group);
-
-                const treeChance = Math.sin(px * 12.9898 + pz * 78.233) * 43758.5453;
-                if ((treeChance - Math.floor(treeChance)) > 0.985) createTree(px, pz, group);
+                createBlock('grass', px, 0, pz, group);
+                for(let y = -1; y > -4; y--) createBlock('dirt', px, y, pz, group);
+                for(let y = -4; y > -50; y--) createBlock('stone', px, y, pz, group);
+                for(let y = -50; y > -99; y--) createBlock('deepslate', px, y, pz, group);
+                createBlock('bedrock', px, -99, pz, group);
             }
         }
         scene.add(group);
@@ -217,24 +188,27 @@
 
     const controls = new PointerLockControls(camera, document.body);
     const raycaster = new THREE.Raycaster();
-    const downRay = new THREE.Raycaster();
+    const hand = document.getElementById('steve-hand');
 
     document.addEventListener('mousedown', (e) => {
         if (!controls.isLocked) return controls.lock();
         
-        isSwinging = true;
-        swingStartTime = performance.now();
+        // Hand animation
+        hand.classList.add('swing');
+        setTimeout(() => hand.classList.remove('swing'), 100);
 
         raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
         const intersects = raycaster.intersectObjects(blocks, false);
         if (intersects.length > 0 && intersects[0].distance < 5) {
             const intersect = intersects[0];
-            if (e.button === 0) { // Break
-                addToInventory(intersect.object.userData.type);
-                intersect.object.parent.remove(intersect.object);
-                blocks.splice(blocks.indexOf(intersect.object), 1);
+            if (e.button === 0) {
+                if(intersect.object.userData.type !== 'bedrock') {
+                    addToInventory(intersect.object.userData.type);
+                    intersect.object.parent.remove(intersect.object);
+                    blocks.splice(blocks.indexOf(intersect.object), 1);
+                }
             } 
-            else if (e.button === 2) { // Place
+            else if (e.button === 2) {
                 const item = inventory[selectedSlot];
                 if (item && item.count > 0) {
                     const pos = intersect.object.position.clone().add(intersect.face.normal);
@@ -271,7 +245,7 @@
         if (e.code === 'KeyD') moveRight = false;
     });
 
-    camera.position.set(8, 5, 8);
+    camera.position.set(4, 2, 4);
     let prevTime = performance.now();
 
     function animate() {
@@ -282,7 +256,7 @@
         if (controls.isLocked) {
             velocity.x -= velocity.x * 10.0 * delta;
             velocity.z -= velocity.z * 10.0 * delta;
-            velocity.y -= 25.0 * delta; 
+            velocity.y -= 25.0 * delta; // Gravity
 
             if (moveForward) velocity.z -= 60.0 * delta;
             if (moveBackward) velocity.z += 60.0 * delta;
@@ -293,35 +267,23 @@
             controls.moveForward(-velocity.z * delta);
             camera.position.y += velocity.y * delta;
 
-            // DYNAMIC PHYSICS COLLISION
-            downRay.set(camera.position, new THREE.Vector3(0, -1, 0));
-            const groundCheck = downRay.intersectObjects(blocks);
-            if (groundCheck.length > 0 && groundCheck[0].distance < 1.7) {
-                velocity.y = Math.max(0, velocity.y);
-                camera.position.y += (1.7 - groundCheck[0].distance);
-                canJump = true;
-            }
-
-            // Hand Swing
-            if (isSwinging) {
-                const elapsed = time - swingStartTime;
-                if (elapsed < 200) {
-                    handGroup.rotation.x = -Math.sin((elapsed / 200) * Math.PI) * 0.5;
-                } else {
-                    isSwinging = false;
-                    handGroup.rotation.x = 0;
+            // --- IMPROVED VOXEL PHYSICS ---
+            const playerRay = new THREE.Raycaster(camera.position, new THREE.Vector3(0, -1, 0), 0, 1.7);
+            const intersections = playerRay.intersectObjects(blocks);
+            
+            if (intersections.length > 0) {
+                const dist = intersections[0].distance;
+                if (dist < 1.7) {
+                    camera.position.y += (1.7 - dist);
+                    velocity.y = 0;
+                    canJump = true;
                 }
-            }
-
-            // Hand Bobbing
-            if (moveForward || moveBackward || moveLeft || moveRight) {
-                handGroup.position.y = Math.sin(time * 0.01) * 0.01;
-                handGroup.position.x = Math.cos(time * 0.005) * 0.01;
+            } else {
+                canJump = false; // Fall if nothing is under feet
             }
 
             updateChunks();
 
-            // Outline
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             const intersects = raycaster.intersectObjects(blocks, false);
             if (intersects.length > 0 && intersects[0].distance < 5) {
